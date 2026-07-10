@@ -506,6 +506,7 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
         copy.as.closure->dynamic_body_len = source->dynamic_body_len;
         copy.as.closure->dynamic_body_base_line = source->dynamic_body_base_line;
     }
+    copy.as.closure->dynamic_strict_types = source->dynamic_strict_types;
     if (source->dynamic_parameter_count != 0) {
         copy.as.closure->dynamic_parameter_names =
             calloc(source->dynamic_parameter_count, sizeof(char *));

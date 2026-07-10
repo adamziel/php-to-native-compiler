@@ -1479,6 +1479,7 @@ struct PtnClosure {
     char *dynamic_body;
     size_t dynamic_body_len;
     size_t dynamic_body_base_line;
+    int dynamic_strict_types;
     char **dynamic_parameter_names;
     size_t dynamic_parameter_count;
 };
@@ -5169,6 +5170,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->dynamic_body = NULL;
     closure->dynamic_body_len = 0;
     closure->dynamic_body_base_line = 0;
+    closure->dynamic_strict_types = 0;
     closure->dynamic_parameter_names = NULL;
     closure->dynamic_parameter_count = 0;
     ptn_runtime_register_closure(runtime, closure);

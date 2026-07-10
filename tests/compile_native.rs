@@ -7231,6 +7231,246 @@ include $path;
 }
 
 #[test]
+fn compile_dynamic_include_restores_strict_types_and_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-strict-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("generated.inc");
+    let output = root.join("dynamic-include-strict-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function takes_int(int $value) { echo "weak:$value\n"; }
+$path = __DIR__ . "/generated.inc";
+file_put_contents($path, <<<'PHP'
+<?php declare(strict_types=1);
+try {
+    takes_int("1");
+} catch (TypeError $e) {
+    echo "include-strict\n";
+}
+function dynamic_strict_helper() {
+    try {
+        takes_int("2");
+    } catch (TypeError $e) {
+        echo "function-strict\n";
+    }
+}
+PHP);
+include $path;
+takes_int("3");
+dynamic_strict_helper();
+file_put_contents($path, <<<'PHP'
+<?php declare(strict_types=1);
+throw new RuntimeException('dynamic include failure');
+PHP);
+try {
+    include $path;
+} catch (RuntimeException $e) {
+    echo "caught-include\n";
+}
+set_error_handler(function ($severity, $message, $file) {
+    echo basename($file), "\n";
+    return true;
+});
+trigger_error('after dynamic include', E_USER_WARNING);
+restore_error_handler();
+takes_int("4");
+"#,
+    )
+    .unwrap();
+    fs::write(&include, "").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "include-strict\nweak:3\nfunction-strict\ncaught-include\nmain.php\nweak:4\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_include_executes_unbraced_die_and_exit_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-unbraced-exit");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "die-parenthesized",
+            r#"<?php
+$path = __DIR__ . "/die-parenthesized.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) die() echo "bad";
+echo "wrong-after-malformed\n";
+PHP);
+try {
+    include $path;
+} catch (Error $e) {
+    echo "rejected-malformed\n";
+}
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) die("wrong-die-parenthesized\n");
+if (false) die;
+if (false) exit("wrong-exit-parenthesized\n");
+if (false) exit;
+echo "before-die\n";
+if (true) die("die-parenthesized\n");
+echo "wrong-after-die\n";
+PHP);
+include $path;
+echo "wrong-after-include\n";
+"#,
+            "rejected-malformed\nbefore-die\ndie-parenthesized\n",
+        ),
+        (
+            "exit-parenthesized",
+            r#"<?php
+$path = __DIR__ . "/exit-parenthesized.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) die("wrong-die-parenthesized\n");
+if (false) exit;
+echo "before-exit\n";
+if (true) exit("exit-parenthesized\n");
+echo "wrong-after-exit\n";
+PHP);
+include $path;
+echo "wrong-after-include\n";
+"#,
+            "before-exit\nexit-parenthesized\n",
+        ),
+        (
+            "die-noarg",
+            r#"<?php
+$path = __DIR__ . "/die-noarg.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) exit("wrong-exit-parenthesized\n");
+echo "before-die-noarg\n";
+if (true) die;
+echo "wrong-after-die\n";
+PHP);
+include $path;
+echo "wrong-after-include\n";
+"#,
+            "before-die-noarg\n",
+        ),
+        (
+            "exit-noarg",
+            r#"<?php
+$path = __DIR__ . "/exit-noarg.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) die;
+echo "before-exit-noarg\n";
+if (true) exit;
+echo "wrong-after-exit\n";
+PHP);
+include $path;
+echo "wrong-after-include\n";
+"#,
+            "before-exit-noarg\n",
+        ),
+    ];
+
+    for (name, source, expected) in cases {
+        let input = root.join(format!("{name}.php"));
+        let include = root.join(format!("{name}.inc"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+        fs::write(&include, "").unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(
+            execution.status.success(),
+            "{name} native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+            execution.status.code(),
+            String::from_utf8_lossy(&execution.stdout),
+            String::from_utf8_lossy(&execution.stderr)
+        );
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    }
+}
+
+#[test]
+fn compile_dynamic_include_preflights_typed_delimiters_lexically_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-lexical-preflight");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("generated.inc");
+    let output = root.join("dynamic-include-lexical-preflight-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/generated.inc";
+file_put_contents($path, <<<'PHP'
+<?php
+function dormant_heredoc() {
+    return <<<TXT
+(]
+TXT;
+}
+function dormant_backtick() {
+    return `printf '(]'`;
+}
+function dormant_nowdoc() {
+    return <<<'TXT'
+(]
+TXT;
+}
+#[SomeAttribute]
+function attributed_dynamic_helper() {
+    echo "top-level-attribute\n";
+}
+attributed_dynamic_helper();
+echo "lexical-ok\n";
+PHP);
+include $path;
+file_put_contents($path, <<<'PHP'
+<?php
+if (false) echo (1];
+echo "wrong-after-parse\n";
+PHP);
+try {
+    include $path;
+} catch (ParseError $e) {
+    echo "caught-parse\n";
+}
+"#,
+    )
+    .unwrap();
+    fs::write(&include, "").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "top-level-attribute\nlexical-ok\ncaught-parse\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+#[test]
 fn compile_dynamic_generated_include_executes_inc_dec_statements_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-include-inc-dec-statement");
     fs::create_dir_all(&root).unwrap();
