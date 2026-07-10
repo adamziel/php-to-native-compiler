@@ -14851,6 +14851,7 @@ fn compile_deprecated_then_reserved_declaration_names_to_native_diagnostics() {
         ("class", "a class"),
         ("interface", "an interface"),
         ("trait", "a trait"),
+        ("enum", "an enum"),
     ];
     for (kind, subject) in cases {
         let root = temp_dir(&format!("ptn-native-{kind}-name-deprecation-then-reserved"));
@@ -14875,7 +14876,7 @@ fn compile_deprecated_then_reserved_declaration_names_to_native_diagnostics() {
         assert_eq!(
             String::from_utf8(execution.stdout).unwrap(),
             format!(
-                "Deprecated: Using \"_\" as {subject} name is deprecated since 8.4 in {} on line 2\n",
+                "\nDeprecated: Using \"_\" as {subject} name is deprecated since 8.4 in {} on line 2\n",
                 input.display()
             ),
             "{kind}"
@@ -14889,6 +14890,25 @@ fn compile_deprecated_then_reserved_declaration_names_to_native_diagnostics() {
             "{kind}"
         );
     }
+
+    let root = temp_dir("ptn-native-enum-name-preserves-reserved-spelling");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-name-preserves-reserved-spelling.php");
+    let output = root.join("enum-name-preserves-reserved-spelling-bin");
+    fs::write(&input, "<?php namespace Demo; enum BOOL {}").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot use \"BOOL\" as an enum name as it is reserved in {} on line 1\n",
+            input.display()
+        )
+    );
 }
 
 #[test]

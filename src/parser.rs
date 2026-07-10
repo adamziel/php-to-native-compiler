@@ -1467,9 +1467,10 @@ impl Parser<'_> {
 
     fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
         let parsed = self.parse_name(expected)?;
+        let source_name = self.parsed_name_source_text(&parsed);
         match parsed.resolution {
             NameResolution::Unqualified => {
-                let name = self.qualify_current_namespace(&parsed.name);
+                let name = self.qualify_current_namespace(&source_name);
                 Ok((name, parsed.span))
             }
             _ => Err(Diagnostic::new(

@@ -37902,7 +37902,9 @@ fn collect_class_declaration_fatals(
     );
     if let Some(message) = reserved_declaration_name_fatal_message(
         &class.name,
-        if class.is_interface {
+        if class.is_enum {
+            ("an", "enum")
+        } else if class.is_interface {
             ("an", "interface")
         } else {
             ("a", "class")
@@ -38014,7 +38016,8 @@ fn reserved_declaration_name_fatal_message(
     article_and_kind: (&str, &str),
 ) -> Option<String> {
     let lookup_name = name.to_ascii_lowercase();
-    let reserved_name = reserved_declaration_name_segment(&lookup_name)?;
+    reserved_declaration_name_segment(&lookup_name)?;
+    let reserved_name = name.rsplit('\\').next().unwrap_or(name);
     let (article, kind) = article_and_kind;
     Some(format!(
         "Cannot use \"{reserved_name}\" as {article} {kind} name as it is reserved"
