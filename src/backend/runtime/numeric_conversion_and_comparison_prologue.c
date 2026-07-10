@@ -1143,7 +1143,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }
-        ptn_runtime_run_object_destructors_until_output_buffer(runtime);
+        ptn_runtime_finish_object_destructors(runtime, shutdown_entry_exception);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }
@@ -1153,7 +1153,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         }
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
-        ptn_runtime_run_object_destructors(runtime);
+        ptn_runtime_finish_object_destructors(runtime, shutdown_entry_exception);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
         }

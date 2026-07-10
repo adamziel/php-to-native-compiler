@@ -2806,7 +2806,6 @@ static PTN_UNUSED size_t ptn_runtime_close_suspended_fibers_once(
     PtnRuntime *runtime,
     PtnException *entry_exception
 );
-static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_force_close_root_generators(PtnRuntime *runtime);
 static PTN_UNUSED size_t ptn_runtime_force_close_live_generators_once(
     PtnRuntime *runtime,

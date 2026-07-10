@@ -144,7 +144,6 @@ static PTN_UNUSED void ptn_runtime_push_trace_frame(
     const PtnValue *args
 );
 static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTraceFrame *frame);
-static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
@@ -2923,33 +2922,6 @@ static PTN_UNUSED size_t ptn_runtime_close_suspended_fibers_once(
     return closed;
 }
 
-static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime) {
-    if (runtime == NULL) {
-        return;
-    }
-    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    size_t initial_output_buffers_len = root->output_buffers_len;
-    size_t index = root->live_objects_len;
-    while (index > 0) {
-        index--;
-        PtnObject *object = root->live_objects[index];
-        ptn_runtime_remove_live_object_at(root, index);
-        if (object == NULL || object->refcount == 0 || object->destructor_called) {
-            continue;
-        }
-        ptn_object_retain(object);
-        ptn_runtime_close_suspended_fiber_object(object);
-        ptn_object_run_destructor_ex(object, 1);
-        ptn_object_release(object);
-        if (root->output_buffers_len > initial_output_buffers_len) {
-            return;
-        }
-        if (index > root->live_objects_len) {
-            index = root->live_objects_len;
-        }
-    }
-}
-
 static int ptn_runtime_live_generator_needs_shutdown_close(PtnObject *object) {
     if (
         object == NULL ||
@@ -3408,6 +3380,33 @@ static PTN_UNUSED void ptn_runtime_drain_suspended_fibers_and_generators(
             (fibers_closed == 0 && generators_closed == 0)) {
             return;
         }
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_finish_object_destructors(
+    PtnRuntime *runtime,
+    PtnException *entry_exception
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    while (
+        root->live_objects_len != 0 &&
+        !ptn_runtime_shutdown_drain_should_stop(root, entry_exception)
+    ) {
+        /* Destructors may create another suspended Fiber or Generator. */
+        ptn_runtime_drain_suspended_fibers_and_generators(
+            root,
+            entry_exception
+        );
+        if (ptn_runtime_shutdown_drain_should_stop(root, entry_exception)) {
+            return;
+        }
+        ptn_runtime_run_object_destructors(root);
     }
 }
 

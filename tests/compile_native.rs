@@ -31317,6 +31317,52 @@ echo "BODY\n";
 }
 
 #[test]
+fn compile_shutdown_destructor_fixed_point_precedes_output_flush_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-destructor-fixed-point-output-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-destructor-fixed-point-output-buffer.php");
+    let output = root.join("shutdown-destructor-fixed-point-output-buffer-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BufferedShutdownNode {
+    public static int $remaining = 3;
+    public static array $keep = [];
+
+    public function __destruct() {
+        $id = self::$remaining--;
+        if ($id === 2) {
+            ob_start(static fn($output) => "BUF[" . $output . "]");
+        }
+        echo "D$id\n";
+        if ($id > 0) {
+            self::$keep[] = new BufferedShutdownNode;
+        }
+    }
+}
+
+$root = new BufferedShutdownNode;
+echo "BODY\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("20s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(execution.status.success(), "{execution:?}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "BODY\nD3\nBUF[D2\nD1\nD0\n]"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_uncaught_exception_shutdown_closes_suspended_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-uncaught-shutdown-close");
     fs::create_dir_all(&root).unwrap();
@@ -31686,6 +31732,52 @@ echo "done\n";
     assert!(execution.status.success(), "{execution:?}");
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_shutdown_destructor_fiber_chain_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-destructor-fiber-chain-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-destructor-fiber-chain-memory-limit.php");
+    let output = root.join("shutdown-destructor-fiber-chain-memory-limit-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class RecursiveFiberDestructor {
+    public function __destruct() {
+        $generator = (function () {
+            $from = (function () {
+                $value = [new RecursiveFiberDestructor];
+                Fiber::suspend();
+            })();
+            yield from $from;
+        })();
+        $fiber = new Fiber(function () use ($generator, &$fiber) {
+            $generator->current();
+        });
+        $fiber->start();
+    }
+}
+new RecursiveFiberDestructor;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("30s")
+        .arg(&output)
+        .env("PTN_MEMORY_LIMIT", "16M")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success(), "{execution:?}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Allowed memory size of 16777216 bytes exhausted"),
+        "{stderr}"
+    );
 }
 
 #[test]
