@@ -6048,6 +6048,47 @@ fn parser_accepts_precedence_aware_binary_expressions() {
 }
 
 #[test]
+fn parser_places_instanceof_between_not_and_other_prefix_operators() {
+    let program = parser::parse(
+        "<?php !$value instanceof Exception; !$value + 1; -(object) $value instanceof stdClass;",
+    )
+    .unwrap();
+
+    let Statement::Expression { expression, .. } = &program.statements[0] else {
+        panic!("expected expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::InstanceOf { .. })
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Binary {
+            op: BinaryOp::Add,
+            left,
+            ..
+        } if matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Not, .. })
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[2] else {
+        panic!("expected expression statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::InstanceOf { expr, .. }
+            if matches!(expr.as_ref(), Expr::Unary { op: UnaryOp::Negate, .. })
+    ));
+}
+
+#[test]
 fn parser_preserves_yield_precedence_for_unary_and_binary_operators() {
     let program =
         parser::parse("<?php function gen() { yield +1; yield -1; yield * -1; }").unwrap();
@@ -128874,6 +128915,34 @@ fn compile_unary_plus_precedence_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "-2.5\n-9");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_instanceof_and_not_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-instanceof-not-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("instanceof-not-precedence.php");
+    let output = root.join("instanceof-not-precedence-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump((object) 1 instanceof stdClass);
+var_dump(! (object) 1 instanceof Exception);
+var_dump(1 + new stdClass instanceof stdClass);
+var_dump(!1 + 1);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nint(2)\nint(1)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

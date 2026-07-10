@@ -40,6 +40,7 @@ const CONCAT_PRECEDENCE: u8 = 13;
 const SHIFT_PRECEDENCE: u8 = 18;
 const ADDITIVE_PRECEDENCE: u8 = 23;
 const MULTIPLICATIVE_PRECEDENCE: u8 = 33;
+const INSTANCEOF_PRECEDENCE: u8 = 39;
 const POWER_PRECEDENCE: u8 = 40;
 const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
     "class constant fetches are unsupported; class constants and enum cases require class metadata";
@@ -8469,7 +8470,7 @@ impl Parser<'_> {
     fn parse_binary_tail_from_left(&mut self, mut left: Expr, min_precedence: u8) -> Result<Expr> {
         loop {
             if token_is_identifier_named(self.peek(), "instanceof") {
-                if COMPARISON_PRECEDENCE < min_precedence {
+                if INSTANCEOF_PRECEDENCE < min_precedence {
                     break;
                 }
                 self.advance();
@@ -8605,7 +8606,9 @@ impl Parser<'_> {
             }
             TokenKind::Bang => {
                 let token = self.advance().clone();
-                let expr = self.parse_prefix_operator_operand_expr()?;
+                let expr = self.parse_prefix_operator_operand_expr_with_precedence(
+                    INSTANCEOF_PRECEDENCE,
+                )?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Not,
@@ -8663,7 +8666,14 @@ impl Parser<'_> {
     }
 
     fn parse_prefix_operator_operand_expr(&mut self) -> Result<Expr> {
-        let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+        self.parse_prefix_operator_operand_expr_with_precedence(POWER_PRECEDENCE)
+    }
+
+    fn parse_prefix_operator_operand_expr_with_precedence(
+        &mut self,
+        min_precedence: u8,
+    ) -> Result<Expr> {
+        let expr = self.parse_binary_expr(min_precedence)?;
         if self.peek_is_expression_assignment_op() {
             self.parse_assignment_expr_from_left(expr)
         } else {
