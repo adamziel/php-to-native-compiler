@@ -128895,10 +128895,35 @@ fn compile_integer_operator_precision_deprecations_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn-generated-code on line 0\nint(3)\n\nDeprecated: Implicit conversion from float-string \"1.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float 2.5 to int loses precision in {} on line 1\nint(1)\n\nDeprecated: Implicit conversion from float-string \"2.5\" to int loses precision in {} on line 1\nint(1)\n",
+            "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {} on line 1\nint(3)\n\nDeprecated: Implicit conversion from float-string \"1.5\" to int loses precision in {} on line 1\nint(1)\n\nDeprecated: Implicit conversion from float 2.5 to int loses precision in {} on line 1\nint(1)\n\nDeprecated: Implicit conversion from float-string \"2.5\" to int loses precision in {} on line 1\nint(1)\n",
+            input.display(),
+            input.display(),
             input.display(),
             input.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_integer_operators_saturate_huge_float_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-int-operator-huge-float-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("int-operator-huge-float-strings.php");
+    let output = root.join("int-operator-huge-float-strings-bin");
+    fs::write(
+        &input,
+        "<?php error_reporting(E_ERROR); foreach ([\"2e150\", \"-2e150\"] as $value) { var_dump(0 % $value); var_dump($value | 0); var_dump($value << 0); } var_dump(2e150 | 0, -2e150 | 0);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(9223372036854775807)\nint(9223372036854775807)\nint(0)\nint(-9223372036854775808)\nint(-9223372036854775808)\nint(0)\nint(0)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -2308,6 +2308,9 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
             );
         }
     }
+    if (value.type == PTN_STRING && number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float_string_to_php_integer(number.floating);
+    }
     return ptn_number_to_integer(number);
 }
 
