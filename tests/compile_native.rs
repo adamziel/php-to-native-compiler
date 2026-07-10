@@ -61282,6 +61282,59 @@ echo $differentAttribute->override('foo'), \"\n\";
 }
 
 #[test]
+fn compile_internal_call_exception_restores_trace_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-call-exception-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-call-exception-trace.php");
+    let output = root.join("internal-call-exception-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+function triggerFromFunction() {
+    trigger_error('error', E_USER_WARNING);
+}
+function namedHandler() {
+    throw new Exception();
+}
+
+set_error_handler('namedHandler', E_USER_WARNING);
+try {
+    triggerFromFunction();
+} catch (Exception $e) {
+    echo \"named caught\\n\";
+}
+restore_error_handler();
+
+set_error_handler(function() { throw new Exception(); }, E_USER_WARNING);
+try {
+    triggerFromFunction();
+} catch (Exception $e) {
+    echo \"closure caught\\n\";
+}
+restore_error_handler();
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "named caught\nclosure caught\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_zend_test_observer_internal_calls_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-observer-internal");
     fs::create_dir_all(&root).unwrap();
@@ -61290,6 +61343,11 @@ fn compile_zend_test_observer_internal_calls_to_native_binary() {
     fs::write(
         &input,
         "<?php
+try {
+    strlen([]);
+} catch (TypeError $e) {
+    echo \"caught\\n\";
+}
 var_dump(array_sum([1, 2, 3]));
 ",
     )
@@ -61319,6 +61377,10 @@ var_dump(array_sum([1, 2, 3]));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "<!-- internal enter strlen() -->\n",
+            "<!-- Exception: TypeError -->\n",
+            "<!-- internal leave strlen() -->\n",
+            "caught\n",
             "<!-- internal enter array_sum() -->\n",
             "<!-- internal leave array_sum():6 -->\n",
             "<!-- internal enter var_dump() -->\n",

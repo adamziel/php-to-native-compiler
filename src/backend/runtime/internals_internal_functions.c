@@ -301900,6 +301900,29 @@ static void ptn_zend_test_observer_internal_leave(
     ptn_output_write(runtime, " -->\n", 5);
 }
 
+static void ptn_zend_test_observer_internal_exception_leave(
+    PtnRuntime *runtime,
+    const char *name
+) {
+    if (runtime == NULL || !runtime->zend_test_observer_execute_internal) {
+        return;
+    }
+    PtnException *exception = runtime->exceptions == NULL
+        ? NULL
+        : runtime->exceptions->active_exception;
+    const char *class_name = exception == NULL || exception->class_name == NULL
+        ? "Exception"
+        : exception->class_name;
+    ptn_zend_test_observer_write_indent(runtime, runtime->zend_test_observer_internal_depth);
+    ptn_output_write(runtime, "<!-- Exception: ", 16);
+    ptn_output_write(runtime, class_name, strlen(class_name));
+    ptn_output_write(runtime, " -->\n", 5);
+    ptn_zend_test_observer_write_indent(runtime, runtime->zend_test_observer_internal_depth);
+    ptn_output_write(runtime, "<!-- internal leave ", 20);
+    ptn_output_write(runtime, name, strlen(name));
+    ptn_output_write(runtime, "() -->\n", 7);
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
     const PtnInternalFunction *function = ptn_runtime_function_disabled(runtime, name)
         ? NULL
@@ -301956,9 +301979,26 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             args
         );
         ptn_internal_apply_sensitive_trace_frame(&trace_frame, function->name);
+        PtnTraceFrame *previous_trace_frame = trace_frame.previous;
+        size_t previous_observer_depth = runtime->zend_test_observer_internal_depth;
+        PtnTryFrame internal_frame;
+        ptn_try_frame_push(runtime, &internal_frame);
+        if (setjmp(internal_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &internal_frame);
+            int observer_entered =
+                runtime->zend_test_observer_internal_depth > previous_observer_depth;
+            runtime->trace_frame = previous_trace_frame;
+            runtime->zend_test_observer_internal_depth = previous_observer_depth;
+            if (observer_entered) {
+                ptn_zend_test_observer_internal_exception_leave(runtime, function->name);
+            }
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
         ptn_zend_test_observer_internal_enter(runtime, function->name);
         PtnValue result = function->handler(runtime, argc, args, line);
         ptn_zend_test_observer_internal_leave(runtime, function->name, result, line);
+        ptn_try_frame_pop(runtime, &internal_frame);
         ptn_runtime_pop_trace_frame(runtime, &trace_frame);
         return result;
     }
