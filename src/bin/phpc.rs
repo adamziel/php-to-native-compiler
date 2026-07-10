@@ -1647,8 +1647,8 @@ fn opcache_ini_env_name(name: &str) -> Option<String> {
         .map(|canonical| format!("PTN_{}", canonical.to_ascii_uppercase().replace('.', "_")))
 }
 
-fn opcache_preload_files(ini: &RuntimeIni, script: &Path) -> Vec<PathBuf> {
-    let script_dir = script.parent().unwrap_or_else(|| Path::new(""));
+fn opcache_preload_files(ini: &RuntimeIni) -> Result<Vec<PathBuf>, PhpcError> {
+    let mut current_dir = None;
     let mut files = Vec::new();
     for (name, value) in &ini.opcache {
         if !name.eq_ignore_ascii_case("opcache.preload") || value.is_empty() {
@@ -1658,10 +1658,17 @@ fn opcache_preload_files(ini: &RuntimeIni, script: &Path) -> Vec<PathBuf> {
         if path.is_absolute() {
             files.push(path);
         } else {
-            files.push(script_dir.join(path));
+            if current_dir.is_none() {
+                current_dir = Some(std::env::current_dir().map_err(|error| {
+                    PhpcError::Message(format!(
+                        "failed to resolve opcache.preload from the current directory: {error}"
+                    ))
+                })?);
+            }
+            files.push(current_dir.as_ref().unwrap().join(path));
         }
     }
-    files
+    Ok(files)
 }
 
 fn opcache_ini_value<'a>(ini: &'a RuntimeIni, name: &str) -> Option<&'a str> {
@@ -2398,7 +2405,7 @@ fn compile_and_run(
     {
         source_options.force_internal_function_dispatch = true;
     }
-    let preload_files = opcache_preload_files(&ini, script);
+    let preload_files = opcache_preload_files(&ini)?;
     compile_file_with_preloads_and_source_options(
         compile_script,
         native.path(),

@@ -108856,9 +108856,12 @@ var_dump(opcache_is_script_cached_in_file_cache($file));\n",
 #[test]
 fn phpc_opcache_preload_method_errors_use_preload_source() {
     let root = temp_dir("ptn-phpc-opcache-preload-method-source");
-    fs::create_dir_all(&root).unwrap();
-    let preload = root.join("preload_bug80634.inc");
-    let input = root.join("bug80634.php");
+    let preload_dir = root.join("preloads");
+    let input_dir = root.join("app");
+    fs::create_dir_all(&preload_dir).unwrap();
+    fs::create_dir_all(&input_dir).unwrap();
+    let preload = preload_dir.join("preload_bug80634.inc");
+    let input = input_dir.join("bug80634.php");
     fs::write(
         &preload,
         "<?php\n\
@@ -108875,12 +108878,13 @@ class SomeClass extends \\DatePeriod {\n\
     fs::write(&input, "<?php\n$v = new SomeClass(5);\n").unwrap();
 
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&root)
         .arg("-d")
         .arg("opcache.enable=1")
         .arg("-d")
         .arg("opcache.enable_cli=1")
         .arg("-d")
-        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("opcache.preload=preloads/preload_bug80634.inc")
         .arg("-f")
         .arg(&input)
         .output()
@@ -109149,9 +109153,12 @@ var_dump(is_subclass_of('D', 'I'));\n",
 #[test]
 fn phpc_opcache_preload_runs_before_root_script() {
     let root = temp_dir("ptn-phpc-opcache-preload-before-root");
-    fs::create_dir_all(&root).unwrap();
-    let preload = root.join("preload.inc.php");
-    let input = root.join("main.php");
+    let preload_dir = root.join("preloads");
+    let input_dir = root.join("app");
+    fs::create_dir_all(&preload_dir).unwrap();
+    fs::create_dir_all(&input_dir).unwrap();
+    let preload = preload_dir.join("preload.inc.php");
+    let input = input_dir.join("main.php");
     fs::write(
         &preload,
         "<?php\n\
@@ -109172,8 +109179,9 @@ var_dump(ini_get('opcache.preload'));\n",
     .unwrap();
 
     let execution = Command::new(phpc_bin())
+        .current_dir(&root)
         .arg("-d")
-        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("opcache.preload=preloads/preload.inc.php")
         .arg("-f")
         .arg(&input)
         .output()
@@ -109183,8 +109191,8 @@ var_dump(ini_get('opcache.preload'));\n",
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             "array(2) {{\n  [0]=>\n  string(3) \"bar\"\n  [1]=>\n  string(3) \"foo\"\n}}\nstring({}) \"{}\"\n",
-            preload.display().to_string().len(),
-            preload.display()
+            "preloads/preload.inc.php".len(),
+            "preloads/preload.inc.php"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
