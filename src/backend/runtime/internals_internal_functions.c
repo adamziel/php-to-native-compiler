@@ -238667,6 +238667,64 @@ static PtnValue ptn_soap_server_add_function(
     return ptn_null();
 }
 
+static int ptn_soap_server_class_exists(PtnRuntime *runtime, const char *class_name) {
+    if (class_name == NULL || class_name[0] == '\0') {
+        return 0;
+    }
+    return (runtime != NULL && ptn_declared_runtime_class_exists(runtime, class_name)) ||
+        ptn_internal_class_exists_name(class_name);
+}
+
+static void ptn_soap_server_throw_invalid_class_name(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "SoapServer::setClass(): Argument #1 ($class) must be a valid class name, %s given",
+        class_name == NULL ? "" : class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "SoapServer::setClass(): Argument #1 ($class) must be a valid class name, %s given",
+        class_name == NULL ? "" : class_name
+    );
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
+static char *ptn_soap_server_resolve_class_binding(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    const char *resolved_name = resolved == NULL ? lookup_name : resolved;
+    if (!ptn_soap_server_class_exists(runtime, resolved_name) &&
+        ptn_class_name_should_autoload(resolved_name)) {
+        ptn_runtime_autoload_class(runtime, resolved_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return NULL;
+        }
+        resolved = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        resolved_name = resolved == NULL ? lookup_name : resolved;
+    }
+    if (!ptn_soap_server_class_exists(runtime, resolved_name)) {
+        ptn_soap_server_throw_invalid_class_name(runtime, class_name);
+        return NULL;
+    }
+    return ptn_duplicate_string(resolved_name);
+}
+
 static PtnValue ptn_soap_server_set_class(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -238686,9 +238744,13 @@ static PtnValue ptn_soap_server_set_class(
     if (class_name == NULL) {
         return ptn_null();
     }
-    const char *resolved = ptn_runtime_resolve_class_alias(runtime, class_name);
+    char *resolved = ptn_soap_server_resolve_class_binding(runtime, class_name, line);
+    if (resolved == NULL) {
+        free(class_name);
+        return ptn_null();
+    }
     ptn_soap_server_clear_class_binding(data);
-    data->class_name = ptn_duplicate_string(resolved == NULL ? class_name : resolved);
+    data->class_name = resolved;
     if (argc > 1) {
         data->class_ctor_argc = argc - 1;
         data->class_ctor_args = calloc(data->class_ctor_argc, sizeof(PtnValue));
@@ -244492,7 +244554,7 @@ static PtnValue ptn_soap_server_handle(
         service = ptn_value_clone_deref(data->object);
         has_service = 1;
     } else if (data != NULL && data->class_name != NULL) {
-        service = ptn_declared_class_new_instance(
+        service = ptn_new_object(
             runtime,
             data->class_name,
             data->class_ctor_argc,

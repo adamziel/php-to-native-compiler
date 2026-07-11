@@ -89981,6 +89981,72 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap_server_setclass_autoloads_service_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-server-setclass-autoload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-server-setclass-autoload.php");
+    let output = root.join("soap-server-setclass-autoload-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($className) {
+    echo "autoload:$className\n";
+    class SoapServerActions {
+        function test() {
+            return "Hello World";
+        }
+    }
+});
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<SOAP-ENV:Envelope
+  SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Body>
+    <ns1:test xmlns:ns1="http://testuri.org" />
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://testuri.org']);
+$server->setClass("SoapServerActions");
+echo "after\n";
+$server->handle($request);
+echo "ok\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("autoload:SoapServerActions\nafter\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<return xsi:type=\"xsd:string\">Hello World</return>"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("ok\n"), "{stdout}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_server_resolve_class_binding"));
+    assert!(c_source.contains("ptn_new_object"));
+}
+
+#[test]
 fn compile_soap_server_non_wsdl_header_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-non-wsdl-header-response");
     fs::create_dir_all(&root).unwrap();
