@@ -90862,6 +90862,50 @@ var_dump($ob[1]);
 }
 
 #[test]
+fn compile_soap_client_unserialize_non_wsdl_state_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-unserialize-non-wsdl-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-client-unserialize-non-wsdl-state.php");
+    let output = root.join("soap-client-unserialize-non-wsdl-state-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[AllowDynamicProperties]
+class MySoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request, "\n";
+        return '';
+    }
+}
+
+$dummy = unserialize('O:12:"MySoapClient":3:{s:3:"uri";s:1:"X";s:8:"location";s:22:"http://localhost/a.xml";s:17:"__default_headers";a:1:{i:1;s:4:"skip";}}');
+$dummy->notexisting();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"X\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Header/><SOAP-ENV:Body><ns1:notexisting/></SOAP-ENV:Body></SOAP-ENV:Envelope>\n\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_option_or_property_string_dup"));
+    assert!(c_source.contains("ptn_soap_client_default_headers_property"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();

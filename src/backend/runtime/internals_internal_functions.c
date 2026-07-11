@@ -16817,6 +16817,30 @@ static void ptn_unserialize_declare_soap_client_properties(
     ptn_unserialize_declare_internal_property_metadata(
         runtime,
         object,
+        "uri",
+        "SoapClient",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "?string",
+        1,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "location",
+        "SoapClient",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "?string",
+        1,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
         "__default_headers",
         "SoapClient",
         PTN_PROPERTY_PUBLIC,
@@ -241797,6 +241821,41 @@ static char *ptn_soap_property_string_or_null(PtnRuntime *runtime, PtnValue obje
     return ptn_soap_value_string_dup(runtime, value, line);
 }
 
+static char *ptn_soap_client_option_or_property_string_dup(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSoapClientData *data,
+    const char *name,
+    size_t line
+) {
+    char *option_value = ptn_soap_options_string_dup(
+        runtime,
+        data == NULL ? ptn_null() : data->options,
+        name,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL || option_value != NULL) {
+        return option_value;
+    }
+    return ptn_soap_property_string_or_null(runtime, receiver, name, line);
+}
+
+static PtnValue ptn_soap_client_default_headers_property(PtnValue receiver) {
+    PtnValue headers = ptn_null();
+    if (ptn_soap_object_property(receiver, "__default_headers", &headers)) {
+        return headers;
+    }
+    return ptn_null();
+}
+
+static int ptn_soap_header_container_present(PtnValue headers) {
+    headers = ptn_value_deref(headers);
+    if (headers.type == PTN_ARRAY) {
+        return 1;
+    }
+    return headers.type == PTN_OBJECT && ptn_soap_header_data(headers) != NULL;
+}
+
 static int ptn_soap_response_object_has_property(PtnValue object, const char *name) {
     PtnValue ignored = ptn_null();
     return ptn_soap_object_property(object, name, &ignored);
@@ -246509,7 +246568,13 @@ static int ptn_soap_client_record_non_wsdl_request(
     if (data == NULL) {
         return 0;
     }
-    char *uri = ptn_soap_options_string_dup(runtime, data->options, "uri", line);
+    char *uri = ptn_soap_client_option_or_property_string_dup(
+        runtime,
+        receiver,
+        data,
+        "uri",
+        line
+    );
     if (runtime->exceptions->active_exception != NULL) {
         free(uri);
         return 0;
@@ -246519,14 +246584,17 @@ static int ptn_soap_client_record_non_wsdl_request(
     }
 
     PtnSoapNamespaceList namespaces = { 0 };
+    PtnValue default_headers = ptn_soap_client_default_headers_property(receiver);
     (void)ptn_soap_namespace_list_add(&namespaces, uri);
     ptn_soap_collect_header_namespaces(&namespaces, input_headers, 0);
     ptn_soap_collect_header_namespaces(&namespaces, data->headers, 0);
+    ptn_soap_collect_header_namespaces(&namespaces, default_headers, 0);
 
     PtnStringBuffer header_xml;
     ptn_string_buffer_init(&header_xml);
     ptn_soap_append_headers_xml(runtime, &header_xml, &namespaces, input_headers, 0, line);
     ptn_soap_append_headers_xml(runtime, &header_xml, &namespaces, data->headers, 0, line);
+    ptn_soap_append_headers_xml(runtime, &header_xml, &namespaces, default_headers, 0, line);
     if (runtime->exceptions->active_exception != NULL) {
         free(uri);
         free(header_xml.data);
@@ -246615,10 +246683,16 @@ static int ptn_soap_client_record_non_wsdl_request(
         }
     }
     ptn_string_buffer_append(&buffer, " SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">");
+    int has_header_container =
+        ptn_soap_header_container_present(input_headers) ||
+        ptn_soap_header_container_present(data->headers) ||
+        ptn_soap_header_container_present(default_headers);
     if (header_xml.len != 0) {
         ptn_string_buffer_append(&buffer, "<SOAP-ENV:Header>");
         ptn_string_buffer_append_len(&buffer, header_xml.data, header_xml.len);
         ptn_string_buffer_append(&buffer, "</SOAP-ENV:Header>");
+    } else if (has_header_container) {
+        ptn_string_buffer_append(&buffer, "<SOAP-ENV:Header/>");
     }
     ptn_string_buffer_append(&buffer, "<SOAP-ENV:Body><ns1:");
     ptn_xml_append_escaped_ex(&buffer, method_name == NULL ? "" : method_name, 0, 0);
@@ -247423,7 +247497,13 @@ static PtnValue ptn_soap_non_wsdl_operation_call(
         ptn_duplicate_string_len(data->last_request == NULL ? "" : data->last_request, data->last_request_len),
         data->last_request_len
     );
-    char *location = ptn_soap_options_string_dup(runtime, data->options, "location", line);
+    char *location = ptn_soap_client_option_or_property_string_dup(
+        runtime,
+        receiver,
+        data,
+        "location",
+        line
+    );
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&request_value);
         free(location);
