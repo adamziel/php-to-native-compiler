@@ -13169,6 +13169,7 @@ fn emit_class_metadata_helpers(
         "IntlTimeZone",
         "IntlIterator",
         "MessageFormatter",
+        "IntlChar",
         "IntlListFormatter",
         "IntlDatePatternGenerator",
         "Locale",
@@ -14105,6 +14106,7 @@ fn emit_class_metadata_helpers(
         "IntlTimeZone",
         "IntlIterator",
         "MessageFormatter",
+        "IntlChar",
         "IntlListFormatter",
         "IntlDatePatternGenerator",
         "Locale",
@@ -28352,6 +28354,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intltimezone" => Some("IntlTimeZone"),
         "intliterator" => Some("IntlIterator"),
         "messageformatter" => Some("MessageFormatter"),
+        "intlchar" => Some("IntlChar"),
         "intllistformatter" => Some("IntlListFormatter"),
         "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
         "locale" => Some("Locale"),
@@ -40182,6 +40185,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlTimeZone")
                 || class_name.eq_ignore_ascii_case("IntlIterator")
                 || class_name.eq_ignore_ascii_case("MessageFormatter")
+                || class_name.eq_ignore_ascii_case("IntlChar")
                 || class_name.eq_ignore_ascii_case("IntlListFormatter")
                 || class_name.eq_ignore_ascii_case("IntlDatePatternGenerator")
                 || class_name.eq_ignore_ascii_case("Locale")
@@ -40597,6 +40601,14 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
             return Some("0");
         }
         if name.eq_ignore_ascii_case("VALID_LOCALE") {
+            return Some("1");
+        }
+    }
+    if class_name.eq_ignore_ascii_case("IntlChar") {
+        if name.eq_ignore_ascii_case("FOLD_CASE_DEFAULT") {
+            return Some("0");
+        }
+        if name.eq_ignore_ascii_case("FOLD_CASE_EXCLUDE_SPECIAL_I") {
             return Some("1");
         }
     }

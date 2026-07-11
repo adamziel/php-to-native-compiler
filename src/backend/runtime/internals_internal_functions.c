@@ -221718,6 +221718,266 @@ static PtnValue ptn_zend_test_enum_static_call_method(
     const PtnValue *args
 );
 
+static int ptn_intl_char_decode_single_utf8_codepoint(
+    const unsigned char *data,
+    size_t len,
+    uint32_t *codepoint_out
+) {
+    if (len == 0 || len > 4) {
+        return 0;
+    }
+    unsigned char first = data[0];
+    if (first <= 0x7fu) {
+        if (len != 1) {
+            return 0;
+        }
+        *codepoint_out = first;
+        return 1;
+    }
+    uint32_t codepoint = 0;
+    uint32_t minimum = 0;
+    if ((first & 0xe0u) == 0xc0u) {
+        if (len != 2) {
+            return 0;
+        }
+        codepoint = first & 0x1fu;
+        minimum = 0x80u;
+    } else if ((first & 0xf0u) == 0xe0u) {
+        if (len != 3) {
+            return 0;
+        }
+        codepoint = first & 0x0fu;
+        minimum = 0x800u;
+    } else if ((first & 0xf8u) == 0xf0u) {
+        if (len != 4) {
+            return 0;
+        }
+        codepoint = first & 0x07u;
+        minimum = 0x10000u;
+    } else {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        unsigned char byte = data[i];
+        if ((byte & 0xc0u) != 0x80u) {
+            return 0;
+        }
+        codepoint = (codepoint << 6) | (uint32_t)(byte & 0x3fu);
+    }
+    if (codepoint < minimum ||
+        codepoint > 0x10ffffu ||
+        (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
+        return 0;
+    }
+    *codepoint_out = codepoint;
+    return 1;
+}
+
+static int ptn_intl_char_read_codepoint_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    uint32_t *codepoint_out,
+    int *from_string_out
+) {
+    value = ptn_value_deref(value);
+    *from_string_out = 0;
+    if (value.type == PTN_INT) {
+        if (value.as.integer < 0 || value.as.integer > 0x10ffff) {
+            return 0;
+        }
+        *codepoint_out = (uint32_t)value.as.integer;
+        return 1;
+    }
+    if (value.type == PTN_STRING) {
+        *from_string_out = 1;
+        return ptn_intl_char_decode_single_utf8_codepoint(
+            value.as.string.data,
+            value.as.string.len,
+            codepoint_out
+        );
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type int|string",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static PtnValue ptn_intl_char_utf8_string_from_codepoint(uint32_t codepoint) {
+    char buffer[4];
+    size_t len = 0;
+    if (codepoint <= 0x7fu) {
+        buffer[len++] = (char)codepoint;
+    } else if (codepoint <= 0x7ffu) {
+        buffer[len++] = (char)(0xc0u | (codepoint >> 6));
+        buffer[len++] = (char)(0x80u | (codepoint & 0x3fu));
+    } else if (codepoint <= 0xffffu) {
+        buffer[len++] = (char)(0xe0u | (codepoint >> 12));
+        buffer[len++] = (char)(0x80u | ((codepoint >> 6) & 0x3fu));
+        buffer[len++] = (char)(0x80u | (codepoint & 0x3fu));
+    } else {
+        buffer[len++] = (char)(0xf0u | (codepoint >> 18));
+        buffer[len++] = (char)(0x80u | ((codepoint >> 12) & 0x3fu));
+        buffer[len++] = (char)(0x80u | ((codepoint >> 6) & 0x3fu));
+        buffer[len++] = (char)(0x80u | (codepoint & 0x3fu));
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len(buffer, len), len);
+}
+
+static void ptn_intl_char_throw_argument_count(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t minimum,
+    size_t maximum,
+    size_t argc
+) {
+    char message[192];
+    int written;
+    if (minimum == maximum) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s() expects exactly %zu argument%s, %zu given",
+            function_name,
+            minimum,
+            minimum == 1 ? "" : "s",
+            argc
+        );
+    } else if (argc < minimum) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s() expects at least %zu argument%s, %zu given",
+            function_name,
+            minimum,
+            minimum == 1 ? "" : "s",
+            argc
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s() expects at most %zu argument%s, %zu given",
+            function_name,
+            maximum,
+            maximum == 1 ? "" : "s",
+            argc
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PtnValue ptn_intl_char_fold_case(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        ptn_intl_char_throw_argument_count(runtime, "IntlChar::foldCase", 1, 2, argc);
+        return ptn_null();
+    }
+    uint32_t codepoint = 0;
+    int from_string = 0;
+    if (!ptn_intl_char_read_codepoint_arg(
+            runtime,
+            "IntlChar::foldCase",
+            1,
+            "codepoint",
+            args[0],
+            &codepoint,
+            &from_string
+        )) {
+        return ptn_null();
+    }
+    int64_t options = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "IntlChar::foldCase", 2, "options", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    uint32_t folded = codepoint;
+    if (codepoint == 'I') {
+        folded = options == 1 ? 0x0131u : (uint32_t)'i';
+    } else if (codepoint >= 'A' && codepoint <= 'Z') {
+        folded = codepoint + 32u;
+    }
+    return from_string
+        ? ptn_intl_char_utf8_string_from_codepoint(folded)
+        : ptn_int((int64_t)folded);
+}
+
+static PtnValue ptn_intl_char_for_digit(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        ptn_intl_char_throw_argument_count(runtime, "IntlChar::forDigit", 1, 2, argc);
+        return ptn_null();
+    }
+    int64_t digit = ptn_internal_expect_integer_arg(runtime, "IntlChar::forDigit", 1, "digit", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t base = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "IntlChar::forDigit", 2, "base", args[1], line)
+        : 10;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (base < 2 || base > 36 || digit < 0 || digit >= base) {
+        return ptn_int(0);
+    }
+    return ptn_int(digit < 10 ? (int64_t)'0' + digit : (int64_t)'a' + digit - 10);
+}
+
+static PtnValue ptn_intl_char_get_numeric_value(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc != 1) {
+        ptn_intl_char_throw_argument_count(runtime, "IntlChar::getNumericValue", 1, 1, argc);
+        return ptn_null();
+    }
+    uint32_t codepoint = 0;
+    int from_string = 0;
+    if (!ptn_intl_char_read_codepoint_arg(
+            runtime,
+            "IntlChar::getNumericValue",
+            1,
+            "codepoint",
+            args[0],
+            &codepoint,
+            &from_string
+        )) {
+        (void)from_string;
+        return ptn_null();
+    }
+    if (codepoint >= '0' && codepoint <= '9') {
+        return ptn_float((double)(codepoint - (uint32_t)'0'));
+    }
+    return ptn_float(-123456789.0);
+}
+
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
@@ -221763,6 +222023,17 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return runtime->exceptions->active_exception != NULL
                 ? ptn_null()
                 : ptn_reflection_modifier_names(modifiers);
+        }
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlChar")) {
+        if (ptn_ascii_case_equal(name, "foldCase")) {
+            return ptn_intl_char_fold_case(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "forDigit")) {
+            return ptn_intl_char_for_digit(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "getNumericValue")) {
+            return ptn_intl_char_get_numeric_value(runtime, argc, args);
         }
     }
     if (ptn_ascii_case_equal(ptn_dom_effective_class_name(class_name), "DOMDocument") &&
@@ -249943,6 +250214,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *c
     return ptn_ascii_case_equal(class_name, "MessageFormatter");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_char(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlChar");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_intl_list_formatter(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "IntlListFormatter");
 }
@@ -250231,6 +250506,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_timezone(class_name)
         || ptn_internal_class_name_is_intl_iterator(class_name)
         || ptn_internal_class_name_is_message_formatter(class_name)
+        || ptn_internal_class_name_is_intl_char(class_name)
         || ptn_internal_class_name_is_intl_list_formatter(class_name)
         || ptn_internal_class_name_is_intl_date_pattern_generator(class_name)
         || ptn_internal_class_name_is_locale(class_name)
@@ -252269,6 +252545,11 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getErrorCode")
             || ptn_ascii_case_equal(method_name, "getErrorMessage");
     }
+    if (ptn_internal_class_name_is_intl_char(class_name)) {
+        return ptn_ascii_case_equal(method_name, "foldCase")
+            || ptn_ascii_case_equal(method_name, "forDigit")
+            || ptn_ascii_case_equal(method_name, "getNumericValue");
+    }
     if (ptn_internal_class_name_is_intl_date_pattern_generator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "create")
@@ -252937,6 +253218,11 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "formatObject");
+    }
+    if (ptn_internal_class_name_is_intl_char(class_name)) {
+        return ptn_ascii_case_equal(method_name, "foldCase")
+            || ptn_ascii_case_equal(method_name, "forDigit")
+            || ptn_ascii_case_equal(method_name, "getNumericValue");
     }
     if (ptn_internal_class_name_is_locale(class_name)) {
         return ptn_ascii_case_equal(method_name, "acceptFromHttp")
@@ -253732,6 +254018,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "format",
             "getErrorCode",
             "getErrorMessage",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_char(class_name)) {
+        static const char *const names[] = {
+            "foldCase",
+            "forDigit",
+            "getNumericValue",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -258252,6 +258547,73 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     }
     if (data->has_closure_metadata) {
         return data->closure_metadata;
+    }
+    if (ptn_internal_class_name_is_intl_char(data->class_name)) {
+        static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_FOLD_CASE_PARAMETERS[] = {
+            { "codepoint", NULL, "int|string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+            { "options", "int", "int", 0, 1, 0, 0, 1, "IntlChar::FOLD_CASE_DEFAULT", "IntlChar::FOLD_CASE_DEFAULT", NULL },
+        };
+        static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_FOR_DIGIT_PARAMETERS[] = {
+            { "digit", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+            { "base", "int", "int", 0, 1, 0, 0, 1, "10", NULL, NULL },
+        };
+        static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_CODEPOINT_PARAMETERS[] = {
+            { "codepoint", NULL, "int|string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+        };
+        if (ptn_ascii_case_equal(data->name, "foldCase")) {
+            return ptn_function_metadata_with_tentative_return(
+                ptn_function_metadata_found(
+                    "IntlChar::foldCase",
+                    1,
+                    sizeof(PTN_INTERNAL_INTL_CHAR_FOLD_CASE_PARAMETERS) /
+                        sizeof(PTN_INTERNAL_INTL_CHAR_FOLD_CASE_PARAMETERS[0]),
+                    1,
+                    0,
+                    PTN_INTERNAL_INTL_CHAR_FOLD_CASE_PARAMETERS,
+                    0,
+                    NULL,
+                    "int|string|null",
+                    1,
+                    1
+                )
+            );
+        }
+        if (ptn_ascii_case_equal(data->name, "forDigit")) {
+            return ptn_function_metadata_with_tentative_return(
+                ptn_function_metadata_found(
+                    "IntlChar::forDigit",
+                    1,
+                    sizeof(PTN_INTERNAL_INTL_CHAR_FOR_DIGIT_PARAMETERS) /
+                        sizeof(PTN_INTERNAL_INTL_CHAR_FOR_DIGIT_PARAMETERS[0]),
+                    1,
+                    0,
+                    PTN_INTERNAL_INTL_CHAR_FOR_DIGIT_PARAMETERS,
+                    0,
+                    "int",
+                    "int",
+                    0,
+                    1
+                )
+            );
+        }
+        if (ptn_ascii_case_equal(data->name, "getNumericValue")) {
+            return ptn_function_metadata_with_tentative_return(
+                ptn_function_metadata_found(
+                    "IntlChar::getNumericValue",
+                    1,
+                    sizeof(PTN_INTERNAL_INTL_CHAR_CODEPOINT_PARAMETERS) /
+                        sizeof(PTN_INTERNAL_INTL_CHAR_CODEPOINT_PARAMETERS[0]),
+                    1,
+                    0,
+                    PTN_INTERNAL_INTL_CHAR_CODEPOINT_PARAMETERS,
+                    0,
+                    "float",
+                    "float",
+                    1,
+                    1
+                )
+            );
+        }
     }
     if (
         (ptn_ascii_case_equal(data->class_name, "_ZendTestClass") ||
@@ -263179,6 +263541,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_timezone(class_name) ||
         ptn_internal_class_name_is_intl_iterator(class_name) ||
         ptn_internal_class_name_is_message_formatter(class_name) ||
+        ptn_internal_class_name_is_intl_char(class_name) ||
         ptn_internal_class_name_is_intl_list_formatter(class_name) ||
         ptn_internal_class_name_is_intl_date_pattern_generator(class_name) ||
         ptn_internal_class_name_is_locale(class_name) ||
@@ -263514,6 +263877,12 @@ static void ptn_reflection_class_append_builtin_constants(
         ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_WIDE"), ptn_int(0));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_SHORT"), ptn_int(1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_NARROW"), ptn_int(2));
+        return;
+    }
+    if (ptn_internal_class_name_is_intl_char(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NO_NUMERIC_VALUE"), ptn_float(-123456789.0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FOLD_CASE_DEFAULT"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FOLD_CASE_EXCLUDE_SPECIAL_I"), ptn_int(1));
         return;
     }
     if (ptn_internal_class_name_is_intl_calendar(class_name)) {

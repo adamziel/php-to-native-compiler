@@ -7105,6 +7105,20 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlChar")) {
+        if (strcmp(constant, "NO_NUMERIC_VALUE") == 0) {
+            *out = ptn_float(-123456789.0);
+            return 1;
+        }
+        if (strcmp(constant, "FOLD_CASE_DEFAULT") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "FOLD_CASE_EXCLUDE_SPECIAL_I") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "_ZendTestClass")) {
         if (strcmp(constant, "TYPED_CLASS_CONST2") == 0 ||
             strcmp(constant, "ZEND_TEST_DEPRECATED") == 0) {

@@ -72377,6 +72377,65 @@ normalizer_get_raw_decomposition(): Code point out of range: U_ILLEGAL_ARGUMENT_
 }
 
 #[test]
+fn compile_intl_char_basic_methods_and_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-char-basic-methods");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-char-basic-methods.php");
+    let output = root.join("intl-char-basic-methods-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(class_exists('IntlChar'));\n\
+var_dump(extension_loaded('intl'));\n\
+var_dump(method_exists('IntlChar', 'foldCase'));\n\
+$method = new ReflectionMethod('IntlChar', 'foldCase');\n\
+$params = $method->getParameters();\n\
+echo $params[0]->getName(), \"\\n\";\n\
+echo $params[1]->getName(), \"\\n\";\n\
+var_dump($params[1]->isOptional(), $params[1]->isPassedByReference());\n\
+var_dump(IntlChar::FOLD_CASE_DEFAULT, IntlChar::FOLD_CASE_EXCLUDE_SPECIAL_I, IntlChar::NO_NUMERIC_VALUE);\n\
+var_dump(IntlChar::forDigit(0), IntlChar::forDigit(3), IntlChar::forDigit(10), IntlChar::forDigit(10, 16));\n\
+var_dump(bin2hex(IntlChar::foldCase('I')));\n\
+var_dump(bin2hex(IntlChar::foldCase('I', IntlChar::FOLD_CASE_EXCLUDE_SPECIAL_I)));\n\
+var_dump(IntlChar::foldCase(65));\n\
+var_dump(IntlChar::getNumericValue('x'));\n\
+var_dump(IntlChar::getNumericValue('x') == IntlChar::NO_NUMERIC_VALUE);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_char_fold_case"));
+    assert!(c_source.contains("IntlChar"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+codepoint\n\
+options\n\
+bool(true)\n\
+bool(false)\n\
+int(0)\n\
+int(1)\n\
+float(-123456789)\n\
+int(48)\n\
+int(51)\n\
+int(0)\n\
+int(97)\n\
+string(2) \"69\"\n\
+string(4) \"c4b1\"\n\
+int(97)\n\
+float(-123456789)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_timezone_mutation_display_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-timezone-mutation-display");
     fs::create_dir_all(&root).unwrap();
