@@ -41158,6 +41158,54 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_sqlite3_stmt_getsql_expands_bound_values_to_native_binary() {
+    let root = temp_dir("ptn-native-sqlite3-stmt-getsql");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sqlite3-stmt-getsql.php");
+    let output = root.join("sqlite3-stmt-getsql-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$db = new SQLite3(':memory:');
+$stmt = $db->prepare('SELECT :a, :b, ?;');
+$stmt->bindValue(':a', 42);
+$stmt->bindValue(':b', 'php');
+$stmt->bindValue(3, 43);
+var_dump(method_exists($stmt, 'getSQL'));
+var_dump($stmt->getSQL(false));
+var_dump($stmt->getSQL(true));
+$stmt->bindValue(':a', 'TEST');
+$stmt->bindValue(':b', '!!!');
+$stmt->bindValue(3, 40);
+var_dump($stmt->getSQL(true));
+$stmt->bindValue(':a', null);
+$stmt->bindValue(':b', "a'b");
+$stmt->bindValue(3, false);
+var_dump($stmt->getSQL(true));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(17) \"SELECT :a, :b, ?;\"\n\
+string(21) \"SELECT 42, 'php', 43;\"\n\
+string(25) \"SELECT 'TEST', '!!!', 40;\"\n\
+string(23) \"SELECT NULL, 'a''b', 0;\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sqlite3_stmt_expanded_sql"));
+}
+
+#[test]
 fn compile_pdo_stringify_fetches_normalizes_cells_across_fetch_modes() {
     let root = temp_dir("ptn-native-pdo-stringify-fetches");
     fs::create_dir_all(&root).unwrap();

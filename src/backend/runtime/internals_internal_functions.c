@@ -252714,6 +252714,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_sqlite3_stmt(class_name)) {
         return ptn_ascii_case_equal(method_name, "bindParam")
             || ptn_ascii_case_equal(method_name, "bindValue")
+            || ptn_ascii_case_equal(method_name, "getSQL")
             || ptn_ascii_case_equal(method_name, "execute")
             || ptn_ascii_case_equal(method_name, "close")
             || ptn_ascii_case_equal(method_name, "reset")
@@ -254792,6 +254793,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "bindParam",
             "bindValue",
+            "getSQL",
             "execute",
             "close",
             "reset",
@@ -266022,6 +266024,11 @@ enum {
     PTN_PDO_FETCH_INTO = 9,
     PTN_PDO_FETCH_PROPS_LATE = 1048576,
     PTN_PDO_SQLITE_ATTR_READONLY_STATEMENT = 1001,
+    PTN_SQLITE3_INTEGER = 1,
+    PTN_SQLITE3_FLOAT = 2,
+    PTN_SQLITE3_TEXT = 3,
+    PTN_SQLITE3_BLOB = 4,
+    PTN_SQLITE3_NULL = 5,
     PTN_SQLITE3_ASSOC = 1,
     PTN_SQLITE3_NUM = 2,
     PTN_SQLITE3_BOTH = 3,
@@ -266583,6 +266590,7 @@ static PtnValue ptn_db_bound_value_for_token(PtnValue bound_values, const char *
         return entry != NULL ? ptn_value_clone_deref(entry->value) : ptn_null();
     }
     if (token[0] == ':' || token[0] == '@' || token[0] == '$') {
+        (*position_inout)++;
         PtnArrayEntry *entry = ptn_db_array_entry_string(values, token);
         if (entry == NULL) {
             entry = ptn_db_array_entry_string(values, token + 1);
@@ -269243,6 +269251,157 @@ static void ptn_sqlite3_stmt_bind(PtnSqlite3StmtData *statement, PtnValue param,
     }
 }
 
+static PtnValue ptn_sqlite3_stmt_inferred_bind_type(PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    switch (resolved.type) {
+        case PTN_INT:
+        case PTN_BOOL:
+            return ptn_int(PTN_SQLITE3_INTEGER);
+        case PTN_FLOAT:
+            return ptn_int(PTN_SQLITE3_FLOAT);
+        case PTN_NULL:
+            return ptn_int(PTN_SQLITE3_NULL);
+        default:
+            return ptn_int(PTN_SQLITE3_TEXT);
+    }
+}
+
+static int64_t ptn_sqlite3_stmt_bind_type_value(PtnValue type) {
+    PtnValue resolved = ptn_value_deref(type);
+    if (resolved.type == PTN_INT) {
+        return resolved.as.integer;
+    }
+    char *type_string = ptn_value_to_string(type);
+    int64_t parsed = strtoll(type_string, NULL, 10);
+    free(type_string);
+    return parsed;
+}
+
+static PtnValue ptn_sqlite3_stmt_bound_value_for_token(PtnValue values, const char *token, size_t *position_inout) {
+    PtnValue resolved_values = ptn_value_deref(values);
+    if (resolved_values.type != PTN_ARRAY) {
+        return ptn_null();
+    }
+    if (token[0] == '?' && isdigit((unsigned char)token[1])) {
+        char *end = NULL;
+        int64_t position = strtoll(token + 1, &end, 10);
+        if (end != token + 1 && *end == '\0') {
+            PtnArrayEntry *entry = ptn_db_array_entry_int(resolved_values, position);
+            return entry != NULL ? ptn_value_clone_deref(entry->value) : ptn_null();
+        }
+    }
+    return ptn_db_bound_value_for_token(values, token, position_inout);
+}
+
+static int ptn_sqlite3_stmt_placeholder_name_char(char ch) {
+    return isalnum((unsigned char)ch) || ch == '_';
+}
+
+static void ptn_sqlite3_stmt_append_sql_string_literal(PtnStringBuffer *buffer, PtnValue value) {
+    PtnStringOperand string = ptn_value_to_string_operand(value);
+    ptn_string_buffer_append_char(buffer, '\'');
+    for (size_t i = 0; i < string.len; i++) {
+        if (string.data[i] == '\'') {
+            ptn_string_buffer_append_char(buffer, '\'');
+        }
+        ptn_string_buffer_append_char(buffer, (char)string.data[i]);
+    }
+    ptn_string_buffer_append_char(buffer, '\'');
+    ptn_string_operand_free(string);
+}
+
+static void ptn_sqlite3_stmt_append_expanded_sql_literal(PtnStringBuffer *buffer, PtnValue value, PtnValue type) {
+    int64_t bind_type = ptn_sqlite3_stmt_bind_type_value(type);
+    PtnValue resolved = ptn_value_deref(value);
+    if (bind_type == PTN_SQLITE3_NULL) {
+        ptn_string_buffer_append(buffer, "NULL");
+        return;
+    }
+    if (bind_type == PTN_SQLITE3_INTEGER) {
+        if (resolved.type == PTN_BOOL) {
+            ptn_string_buffer_append(buffer, resolved.as.boolean ? "1" : "0");
+            return;
+        }
+        if (resolved.type == PTN_INT) {
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)resolved.as.integer);
+            return;
+        }
+        char *integer_string = ptn_value_to_string(value);
+        long long integer = strtoll(integer_string, NULL, 10);
+        free(integer_string);
+        ptn_string_buffer_append_format(buffer, "%lld", integer);
+        return;
+    }
+    if (bind_type == PTN_SQLITE3_FLOAT) {
+        PtnStringOperand number = ptn_value_to_string_operand(value);
+        ptn_string_buffer_append_len(buffer, (const char *)number.data, number.len);
+        ptn_string_operand_free(number);
+        return;
+    }
+    ptn_sqlite3_stmt_append_sql_string_literal(buffer, value);
+}
+
+static PtnValue ptn_sqlite3_stmt_expanded_sql(PtnSqlite3StmtData *statement) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    const char *sql = statement->sql != NULL ? statement->sql : "";
+    size_t position = 1;
+    char quote = '\0';
+    for (size_t i = 0; sql[i] != '\0';) {
+        char ch = sql[i];
+        if (quote != '\0') {
+            ptn_string_buffer_append_char(&buffer, ch);
+            i++;
+            if (ch == quote) {
+                if (quote == '\'' && sql[i] == '\'') {
+                    ptn_string_buffer_append_char(&buffer, sql[i]);
+                    i++;
+                } else {
+                    quote = '\0';
+                }
+            }
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            quote = ch;
+            ptn_string_buffer_append_char(&buffer, ch);
+            i++;
+            continue;
+        }
+        size_t token_len = 0;
+        if (ch == '?') {
+            token_len = 1;
+            while (isdigit((unsigned char)sql[i + token_len])) {
+                token_len++;
+            }
+        } else if ((ch == ':' || ch == '@' || ch == '$') && ptn_sqlite3_stmt_placeholder_name_char(sql[i + 1])) {
+            token_len = 1;
+            while (ptn_sqlite3_stmt_placeholder_name_char(sql[i + token_len])) {
+                token_len++;
+            }
+        }
+        if (token_len == 0) {
+            ptn_string_buffer_append_char(&buffer, ch);
+            i++;
+            continue;
+        }
+        char *token = ptn_duplicate_string_len(sql + i, token_len);
+        size_t type_position = position;
+        PtnValue value = ptn_sqlite3_stmt_bound_value_for_token(statement->bound_values, token, &position);
+        PtnValue type = ptn_sqlite3_stmt_bound_value_for_token(statement->bound_types, token, &type_position);
+        if (type.type == PTN_NULL) {
+            ptn_value_destroy(&type);
+            type = ptn_sqlite3_stmt_inferred_bind_type(value);
+        }
+        ptn_sqlite3_stmt_append_expanded_sql_literal(&buffer, value, type);
+        ptn_value_destroy(&value);
+        ptn_value_destroy(&type);
+        free(token);
+        i += token_len;
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -270122,9 +270281,23 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "SQLite3Stmt bind method expects at least 2 arguments");
             return ptn_null();
         }
-        PtnValue type = argc >= 3 ? args[2] : ptn_int(3);
+        PtnValue type = argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_sqlite3_stmt_inferred_bind_type(args[1]);
         ptn_sqlite3_stmt_bind(statement, args[0], args[1], type);
+        ptn_value_destroy(&type);
         return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "getSQL")) {
+        if (argc > 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "SQLite3Stmt::getSQL() expects at most 1 argument, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        int expanded = argc >= 1 && ptn_is_truthy(args[0]);
+        return expanded ? ptn_sqlite3_stmt_expanded_sql(statement) : ptn_string(statement->sql != NULL ? statement->sql : "");
     }
     if (ptn_ascii_case_equal(name, "execute")) {
         PtnSqlite3Data *sqlite = ptn_sqlite3_data(statement->db);
