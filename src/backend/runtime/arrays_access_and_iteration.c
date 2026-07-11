@@ -6901,7 +6901,16 @@ static PTN_UNUSED PtnValue ptn_exception_write_dynamic_property(
         exception->dynamic_properties.as.array,
         key
     );
-    if (entry == NULL) {
+    int is_declared_soap_fault_property =
+        ptn_exception_is_soap_fault_class(exception->class_name) &&
+        ptn_soap_fault_public_property_metadata(
+            property,
+            NULL,
+            NULL,
+            NULL,
+            NULL
+        );
+    if (entry == NULL && !is_declared_soap_fault_property) {
         ptn_emit_dynamic_exception_property_deprecation(runtime, exception, property, line);
     }
     PtnValue stored = ptn_value_clone_deref(value);

@@ -16153,6 +16153,44 @@ static PtnValue ptn_unserialize_new_internal_exception_shell(
         1,
         line
     );
+    if (ptn_exception_name_equal(canonical_name, "SoapFault")) {
+        static const char *const soap_fault_properties[] = {
+            "faultstring",
+            "faultcode",
+            "faultcodens",
+            "faultactor",
+            "detail",
+            "_name",
+            "headerfault",
+            "lang",
+        };
+        for (size_t i = 0; i < sizeof(soap_fault_properties) / sizeof(soap_fault_properties[0]); i++) {
+            PtnPropertyTypeKind type_kind = PTN_PROPERTY_TYPE_NONE;
+            const char *type_text = NULL;
+            int allows_null = 0;
+            if (!ptn_soap_fault_public_property_metadata(
+                    soap_fault_properties[i],
+                    &type_kind,
+                    &type_text,
+                    &allows_null,
+                    NULL
+                )) {
+                continue;
+            }
+            ptn_unserialize_declare_internal_property_metadata(
+                runtime,
+                object,
+                soap_fault_properties[i],
+                "SoapFault",
+                PTN_PROPERTY_PUBLIC,
+                type_kind,
+                NULL,
+                type_text,
+                allows_null,
+                line
+            );
+        }
+    }
     return object;
 }
 
@@ -262010,15 +262048,23 @@ static int ptn_builtin_exception_reflection_property_metadata(
         return 1;
     }
     if (
-        ptn_exception_name_equal(canonical_class, "SoapFault") &&
-        ptn_exception_name_equal(property_name, "headerfault")
+        ptn_exception_name_equal(canonical_class, "SoapFault")
     ) {
-        *declaring_class = "SoapFault";
-        *is_static = 0;
-        *visibility = PTN_PROPERTY_PUBLIC;
-        *has_default = 1;
-        *modifiers = 1;
-        return 1;
+        int soap_fault_has_default = 0;
+        if (ptn_soap_fault_public_property_metadata(
+                property_name,
+                NULL,
+                NULL,
+                NULL,
+                &soap_fault_has_default
+            )) {
+            *declaring_class = "SoapFault";
+            *is_static = 0;
+            *visibility = PTN_PROPERTY_PUBLIC;
+            *has_default = soap_fault_has_default;
+            *modifiers = 1;
+            return 1;
+        }
     }
 
     const char *base_class = ptn_exception_type_matches_name(canonical_class, "Error")
@@ -262075,10 +262121,20 @@ static PtnValue ptn_builtin_exception_reflection_property_default(
         return ptn_array_from_literal_entries(0, NULL);
     }
     if (
-        ptn_exception_name_equal(class_name, "SoapFault") &&
-        ptn_exception_name_equal(property_name, "headerfault")
+        ptn_exception_name_equal(class_name, "SoapFault")
     ) {
-        return ptn_null();
+        if (ptn_soap_fault_public_property_metadata(
+                property_name,
+                NULL,
+                NULL,
+                NULL,
+                NULL
+            )) {
+            if (strcmp(property_name, "lang") == 0) {
+                return ptn_string("");
+            }
+            return ptn_null();
+        }
     }
     if (
         ptn_exception_name_equal(property_name, "message") ||

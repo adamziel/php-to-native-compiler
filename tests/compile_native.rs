@@ -90817,6 +90817,51 @@ var_dump($client);
 }
 
 #[test]
+fn compile_soap_fault_unserialize_declared_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-fault-unserialize-declared-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-fault-unserialize-declared-properties.php");
+    let output = root.join("soap-fault-unserialize-declared-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$addr = 0x4141414141414141;
+
+function ptr2str($ptr) {
+    $out = "";
+    for ($i = 0; $i < 8; $i++) {
+        $out .= chr($ptr & 0xff);
+        $ptr >>= 8;
+    }
+    return $out;
+}
+
+$sf = new SoapFault('1', 'string', 'detail', 'header', 'line', str_repeat("A", 232) . ptr2str($addr));
+$ob = unserialize("a:3:{i:0;" . serialize($sf) . 'i:1;R:13;i:2;R:11;}');
+
+var_dump($ob[1]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout, "string(6) \"detail\"\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_fault_public_property_metadata"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();

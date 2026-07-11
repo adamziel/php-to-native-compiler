@@ -3736,6 +3736,83 @@ static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *rig
     return *left == '\0' && *right == '\0';
 }
 
+static PTN_UNUSED int ptn_soap_fault_public_property_metadata(
+    const char *property_name,
+    PtnPropertyTypeKind *type_kind,
+    const char **type_text,
+    int *allows_null,
+    int *has_default
+) {
+    if (property_name == NULL) {
+        return 0;
+    }
+    if (strcmp(property_name, "faultstring") == 0) {
+        if (type_kind != NULL) {
+            *type_kind = PTN_PROPERTY_TYPE_STRING;
+        }
+        if (type_text != NULL) {
+            *type_text = "string";
+        }
+        if (allows_null != NULL) {
+            *allows_null = 0;
+        }
+        if (has_default != NULL) {
+            *has_default = 0;
+        }
+        return 1;
+    }
+    if (strcmp(property_name, "faultcode") == 0 ||
+        strcmp(property_name, "faultcodens") == 0 ||
+        strcmp(property_name, "faultactor") == 0 ||
+        strcmp(property_name, "_name") == 0) {
+        if (type_kind != NULL) {
+            *type_kind = PTN_PROPERTY_TYPE_STRING;
+        }
+        if (type_text != NULL) {
+            *type_text = "?string";
+        }
+        if (allows_null != NULL) {
+            *allows_null = 1;
+        }
+        if (has_default != NULL) {
+            *has_default = 1;
+        }
+        return 1;
+    }
+    if (strcmp(property_name, "detail") == 0 ||
+        strcmp(property_name, "headerfault") == 0) {
+        if (type_kind != NULL) {
+            *type_kind = PTN_PROPERTY_TYPE_NONE;
+        }
+        if (type_text != NULL) {
+            *type_text = NULL;
+        }
+        if (allows_null != NULL) {
+            *allows_null = 1;
+        }
+        if (has_default != NULL) {
+            *has_default = 1;
+        }
+        return 1;
+    }
+    if (strcmp(property_name, "lang") == 0) {
+        if (type_kind != NULL) {
+            *type_kind = PTN_PROPERTY_TYPE_STRING;
+        }
+        if (type_text != NULL) {
+            *type_text = "string";
+        }
+        if (allows_null != NULL) {
+            *allows_null = 0;
+        }
+        if (has_default != NULL) {
+            *has_default = 1;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, const char *type_name) {
     if (type_name[0] == '\\') {
         type_name++;
