@@ -33979,7 +33979,7 @@ fn emit_instruction(
         } => {
             let path = emit_array_unset_path_segments(out, values, dimensions);
             if property_receiver_uses_quiet_unset(receiver) {
-                let receiver_lookup_temp = values.emit_quiet_lookup(out, receiver);
+                let receiver_lookup_temp = values.emit_quiet_lookup_for_unset_receiver(out, receiver);
                 out.push_str("    if (");
                 out.push_str(&receiver_lookup_temp);
                 out.push_str(".exists) {\n");
@@ -34128,7 +34128,7 @@ fn emit_instruction(
             line,
         } => {
             if property_receiver_uses_quiet_unset(receiver) {
-                let receiver_lookup_temp = values.emit_quiet_lookup(out, receiver);
+                let receiver_lookup_temp = values.emit_quiet_lookup_for_unset_receiver(out, receiver);
                 out.push_str("    if (");
                 out.push_str(&receiver_lookup_temp);
                 out.push_str(".exists) {\n");
@@ -60457,6 +60457,83 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("        } else {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_lookup_missing();\n");
+        out.push_str("        }\n");
+        emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
+        lookup_temp
+    }
+
+    fn emit_quiet_lookup_for_unset_receiver(
+        &mut self,
+        out: &mut String,
+        value: &ValueExpr,
+    ) -> String {
+        match value {
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_property_probe_quiet_for_unset_receiver(out, receiver, name, *line),
+            _ => self.emit_quiet_lookup(out, value),
+        }
+    }
+
+    fn emit_property_probe_quiet_for_unset_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let receiver_lookup_temp = self.emit_quiet_lookup_for_unset_receiver(out, receiver);
+        let lookup_temp = self.next_temp();
+        out.push_str("        PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(";\n");
+        out.push_str("        if (");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".value, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("            if (!");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ptn_value_deref(");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".value).type == PTN_OBJECT) {\n");
+        let null_temp = self.next_temp();
+        let assigned_temp = self.next_temp();
+        out.push_str("                PtnValue ");
+        out.push_str(&null_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("                PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".value, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&null_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("                ptn_value_destroy(&");
+        out.push_str(&assigned_temp);
+        out.push_str(");\n");
+        out.push_str("            }\n");
         out.push_str("        } else {\n");
         out.push_str("            ");
         out.push_str(&lookup_temp);

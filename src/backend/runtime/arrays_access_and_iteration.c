@@ -25509,6 +25509,16 @@ static PTN_UNUSED void ptn_object_array_path_unset(
                 property,
                 line
             );
+        } else if (metadata == NULL) {
+            PtnValue assigned = ptn_object_write_property_indirect(
+                runtime,
+                receiver,
+                property,
+                access_scope,
+                current,
+                line
+            );
+            ptn_value_destroy(&assigned);
         }
         ptn_value_destroy(&current);
         return;
