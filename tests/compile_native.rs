@@ -90666,6 +90666,89 @@ var_dump((new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0, 'classmap
 }
 
 #[test]
+fn compile_soap_wsdl_schema_integer_ranges_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-schema-integer-ranges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-schema-integer-ranges.php");
+    let output = root.join("soap-wsdl-schema-integer-ranges-bin");
+    fs::write(
+        &input,
+        r##"<?php
+function wsdl_with_schema(string $schema): string {
+    return <<<XML
+<?xml version="1.0"?>
+<definitions
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <xsd:schema targetNamespace="http://test-uri/">
+      $schema
+    </xsd:schema>
+  </types>
+  <message name="m"><part name="p" type="tns:T"/></message>
+  <portType name="p"><operation name="op"><input message="tns:m"/></operation></portType>
+  <binding name="b" type="tns:p">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="op">
+      <soap:operation soapAction="#op"/>
+      <input><soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+    </operation>
+  </binding>
+  <service name="s"><port name="p" binding="tns:b"><soap:address location="test://"/></port></service>
+</definitions>
+XML;
+}
+
+$cases = [
+    "maxOccurs" => '<xsd:complexType name="T"><xsd:sequence><xsd:element name="x" type="xsd:string" maxOccurs="2147483648"/></xsd:sequence></xsd:complexType>',
+    "minInclusive" => '<xsd:simpleType name="T"><xsd:restriction base="xsd:int"><xsd:minInclusive value="2147483648"/></xsd:restriction></xsd:simpleType>',
+    "fractional" => '<xsd:complexType name="T"><xsd:sequence><xsd:element name="x" type="xsd:string" maxOccurs="3.141"/></xsd:sequence></xsd:complexType>',
+];
+
+foreach ($cases as $name => $schema) {
+    $path = __DIR__ . "/$name.wsdl";
+    file_put_contents($path, wsdl_with_schema($schema));
+    try {
+        new SoapClient($path, ["cache_wsdl" => WSDL_CACHE_NONE]);
+        echo "$name: parsed\n";
+    } catch (SoapFault $e) {
+        echo "$name: {$e->getMessage()}\n";
+    }
+}
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("maxOccurs: SOAP-ERROR: Parsing Schema: maxOccurs value is out of range"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("minInclusive: SOAP-ERROR: Parsing Schema: minInclusive value is out of range"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("fractional: parsed\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_validate_wsdl_schema_integer_ranges"));
+    assert!(c_source.contains("ptn_soap_schema_int_value_out_of_range"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();

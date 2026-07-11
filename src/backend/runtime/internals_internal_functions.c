@@ -233891,6 +233891,149 @@ static int ptn_soap_validate_wsdl_schema_imports(
     return 1;
 }
 
+static int ptn_soap_throw_wsdl_schema_range_error(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t line,
+    size_t constructor_argc,
+    const PtnValue *constructor_args
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "SOAP-ERROR: Parsing Schema: %s value is out of range",
+        name == NULL ? "" : name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "SOAP-ERROR: Parsing Schema: %s value is out of range",
+        name == NULL ? "" : name
+    );
+    if (constructor_args != NULL) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "SoapFault",
+            message,
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            "SoapClient->__construct",
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            constructor_argc,
+            constructor_args
+        );
+    } else {
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "SoapFault",
+            message,
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+    }
+    return 0;
+}
+
+static int ptn_soap_schema_int_value_out_of_range(
+    const char *value,
+    int non_negative
+) {
+    if (value == NULL) {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long double parsed = strtold(value, &end);
+    if (end == value) {
+        return 0;
+    }
+    if (errno == ERANGE ||
+        parsed < -2147483648.0L ||
+        parsed > 2147483647.0L) {
+        return 1;
+    }
+    return non_negative && parsed < 0.0L;
+}
+
+static int ptn_soap_validate_wsdl_schema_integer_ranges(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    size_t line,
+    size_t constructor_argc,
+    const PtnValue *constructor_args
+) {
+    static const char *const occurrence_attrs[] = { "minOccurs", "maxOccurs" };
+    static const char *const facet_tags[] = {
+        "minExclusive",
+        "minInclusive",
+        "maxExclusive",
+        "maxInclusive",
+        "totalDigits",
+        "fractionDigits",
+        "length",
+        "minLength",
+        "maxLength"
+    };
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            break;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            break;
+        }
+        for (size_t i = 0; i < sizeof(occurrence_attrs) / sizeof(occurrence_attrs[0]); i++) {
+            const char *name = occurrence_attrs[i];
+            char *value = ptn_soap_attr_dup(tag, tag_end, name);
+            int out_of_range = value != NULL &&
+                !ptn_ascii_case_equal(value, "unbounded") &&
+                ptn_soap_schema_int_value_out_of_range(value, 1);
+            free(value);
+            if (out_of_range) {
+                return ptn_soap_throw_wsdl_schema_range_error(
+                    runtime,
+                    name,
+                    line,
+                    constructor_argc,
+                    constructor_args
+                );
+            }
+        }
+        for (size_t i = 0; i < sizeof(facet_tags) / sizeof(facet_tags[0]); i++) {
+            const char *name = facet_tags[i];
+            if (!ptn_soap_tag_is_opening_name(tag, tag_end, name)) {
+                continue;
+            }
+            char *value = ptn_soap_attr_dup(tag, tag_end, "value");
+            int out_of_range = ptn_soap_schema_int_value_out_of_range(value, 0);
+            free(value);
+            if (out_of_range) {
+                return ptn_soap_throw_wsdl_schema_range_error(
+                    runtime,
+                    name,
+                    line,
+                    constructor_argc,
+                    constructor_args
+                );
+            }
+            break;
+        }
+        cursor = tag_end;
+    }
+    return 1;
+}
+
 static int ptn_soap_client_load_wsdl(
     PtnRuntime *runtime,
     PtnSoapClientData *data,
@@ -233933,6 +234076,15 @@ static int ptn_soap_client_load_wsdl(
     }
     data->location = ptn_soap_first_attr_from_tag_name(data, "address", "location");
     if (!ptn_soap_validate_wsdl_schema_imports(
+            runtime,
+            data,
+            line,
+            constructor_argc,
+            constructor_args
+        )) {
+        return 0;
+    }
+    if (!ptn_soap_validate_wsdl_schema_integer_ranges(
             runtime,
             data,
             line,
