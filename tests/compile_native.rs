@@ -90749,6 +90749,74 @@ foreach ($cases as $name => $schema) {
 }
 
 #[test]
+fn compile_soap_client_debug_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-debug-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-client-debug-properties.php");
+    let output = root.join("soap-client-debug-properties-bin");
+    fs::write(
+        &input,
+        r##"<?php
+function book_from_xml(string $xml): string {
+    return $xml;
+}
+
+$client = new SoapClient(NULL, [
+    'uri' => 'http://schemas.nothing.com',
+    'location' => 'test://',
+    'typemap' => [[
+        'type_ns' => 'http://schemas.nothing.com',
+        'type_name' => 'book',
+        'from_xml' => 'book_from_xml',
+    ]],
+]);
+var_dump($client);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(SoapClient)#"), "{stdout}");
+    assert!(stdout.contains("(35) {\n"), "{stdout}");
+    assert!(
+        stdout.contains("[\"uri\":\"SoapClient\":private]=>\n  string(26) \"http://schemas.nothing.com\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"location\":\"SoapClient\":private]=>\n  string(7) \"test://\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"trace\":\"SoapClient\":private]=>\n  bool(false)"), "{stdout}");
+    assert!(
+        stdout.contains("[\"_exceptions\":\"SoapClient\":private]=>\n  bool(true)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"_stream_context\":\"SoapClient\":private]=>\n  resource("), "{stdout}");
+    assert!(stdout.contains("of type (stream-context)"), "{stdout}");
+    assert!(
+        stdout.contains("[\"_cookies\":\"SoapClient\":private]=>\n  array(0) {"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"__last_response_headers\":\"SoapClient\":private]=>\n  NULL"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_initialize_debug_properties"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();

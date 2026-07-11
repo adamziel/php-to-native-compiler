@@ -232234,6 +232234,224 @@ static PtnSoapClientData *ptn_soap_client_data_new(PtnValue options) {
     return data;
 }
 
+static PtnResource *ptn_default_stream_context_ensure(void);
+
+static void ptn_soap_client_declare_private_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *name,
+    PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
+    const char *type_text,
+    int type_allows_null,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        name,
+        "SoapClient",
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_PRIVATE,
+        0,
+        type_kind,
+        type_class_name,
+        type_text,
+        type_allows_null,
+        1,
+        value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PtnValue ptn_soap_option_string_or_null(PtnValue options, const char *name) {
+    PtnValue value = ptn_null();
+    if (ptn_soap_options_entry(options, name, &value) &&
+        ptn_value_deref(value).type == PTN_STRING) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_soap_option_int_or_null(PtnValue options, const char *name) {
+    PtnValue value = ptn_null();
+    if (ptn_soap_options_entry(options, name, &value) &&
+        ptn_value_deref(value).type == PTN_INT) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_soap_option_array_or_null(PtnValue options, const char *name) {
+    PtnValue value = ptn_null();
+    if (ptn_soap_options_entry(options, name, &value) &&
+        ptn_value_deref(value).type == PTN_ARRAY) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_null();
+}
+
+static int ptn_soap_option_is_true_or_one(PtnValue options, const char *name) {
+    PtnValue value = ptn_null();
+    if (!ptn_soap_options_entry(options, name, &value)) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    return (value.type == PTN_BOOL && value.as.boolean) ||
+        (value.type == PTN_INT && value.as.integer == 1);
+}
+
+static int ptn_soap_option_is_false_or_zero(PtnValue options, const char *name) {
+    PtnValue value = ptn_null();
+    if (!ptn_soap_options_entry(options, name, &value)) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    return (value.type == PTN_BOOL && !value.as.boolean) ||
+        (value.type == PTN_INT && value.as.integer == 0);
+}
+
+static PtnValue ptn_soap_client_debug_stream_context(PtnValue options, int has_options) {
+    PtnValue value = ptn_null();
+    if (ptn_soap_options_entry(options, "stream_context", &value) &&
+        ptn_value_deref(value).type == PTN_RESOURCE) {
+        return ptn_value_clone_deref(value);
+    }
+    if (!has_options) {
+        return ptn_null();
+    }
+    PtnResource *context = ptn_default_stream_context_ensure();
+    if (context == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_retain(context);
+    return ptn_resource(context);
+}
+
+static void ptn_soap_client_initialize_debug_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSoapClientData *data,
+    PtnValue wsdl,
+    int has_options,
+    size_t line
+) {
+    PtnValue options = data == NULL ? ptn_null() : data->options;
+    PtnValue uri = ptn_value_deref(wsdl).type == PTN_NULL
+        ? ptn_soap_option_string_or_null(options, "uri")
+        : ptn_null();
+    PtnValue style = ptn_value_deref(wsdl).type == PTN_NULL
+        ? ptn_soap_option_int_or_null(options, "style")
+        : ptn_null();
+    PtnValue use = ptn_value_deref(wsdl).type == PTN_NULL
+        ? ptn_soap_option_int_or_null(options, "use")
+        : ptn_null();
+    PtnValue location = ptn_soap_option_string_or_null(options, "location");
+    PtnValue compression = ptn_soap_option_int_or_null(options, "compression");
+    PtnValue login = ptn_soap_option_string_or_null(options, "login");
+    PtnValue password = ptn_value_deref(login).type == PTN_STRING
+        ? ptn_soap_option_string_or_null(options, "password")
+        : ptn_null();
+    PtnValue authentication = ptn_null();
+    int use_digest = ptn_value_deref(login).type == PTN_STRING &&
+        ptn_soap_options_entry(options, "authentication", &authentication) &&
+        ptn_value_deref(authentication).type == PTN_INT &&
+        ptn_value_deref(authentication).as.integer == 1;
+    PtnValue proxy_host = ptn_soap_option_string_or_null(options, "proxy_host");
+    PtnValue proxy_port = ptn_null();
+    PtnValue proxy_login = ptn_null();
+    PtnValue proxy_password = ptn_null();
+    if (ptn_value_deref(proxy_host).type == PTN_STRING) {
+        PtnValue proxy_port_option = ptn_null();
+        if (ptn_soap_options_entry(options, "proxy_port", &proxy_port_option)) {
+            proxy_port = ptn_int(ptn_value_to_integer(proxy_port_option));
+        }
+        proxy_login = ptn_soap_option_string_or_null(options, "proxy_login");
+        if (ptn_value_deref(proxy_login).type == PTN_STRING) {
+            proxy_password = ptn_soap_option_string_or_null(options, "proxy_password");
+        }
+    }
+    PtnValue encoding = ptn_soap_option_string_or_null(options, "encoding");
+    PtnValue classmap = ptn_soap_option_array_or_null(options, "classmap");
+    PtnValue features = ptn_soap_option_int_or_null(options, "features");
+    PtnValue connection_timeout = ptn_int(0);
+    PtnValue timeout_option = ptn_null();
+    if (ptn_soap_options_entry(options, "connection_timeout", &timeout_option)) {
+        int64_t timeout = ptn_value_to_integer(timeout_option);
+        if (timeout > 0) {
+            connection_timeout = ptn_int(timeout);
+        }
+    }
+    PtnValue stream_context = ptn_soap_client_debug_stream_context(options, has_options);
+    PtnValue user_agent = ptn_soap_option_string_or_null(options, "user_agent");
+    PtnValue ssl_method = ptn_soap_option_int_or_null(options, "ssl_method");
+    int64_t soap_version = 1;
+    PtnValue soap_version_option = ptn_null();
+    if (ptn_soap_options_entry(options, "soap_version", &soap_version_option) &&
+        ptn_value_deref(soap_version_option).type == PTN_INT) {
+        soap_version = ptn_value_deref(soap_version_option).as.integer;
+    }
+    PtnValue cookies = data == NULL ? ptn_array_from_literal_entries(0, NULL) : ptn_value_clone_deref(data->cookies);
+
+    ptn_soap_client_declare_private_property(runtime, object, "uri", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, uri, line);
+    ptn_soap_client_declare_private_property(runtime, object, "style", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, style, line);
+    ptn_soap_client_declare_private_property(runtime, object, "use", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, use, line);
+    ptn_soap_client_declare_private_property(runtime, object, "location", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, location, line);
+    ptn_soap_client_declare_private_property(runtime, object, "trace", PTN_PROPERTY_TYPE_BOOL, NULL, "bool", 0, ptn_bool(ptn_soap_option_is_true_or_one(options, "trace")), line);
+    ptn_soap_client_declare_private_property(runtime, object, "compression", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, compression, line);
+    ptn_soap_client_declare_private_property(runtime, object, "sdl", PTN_PROPERTY_TYPE_CLASS, "Soap\\Sdl", "?Soap\\Sdl", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "httpsocket", PTN_PROPERTY_TYPE_NONE, NULL, NULL, 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "httpurl", PTN_PROPERTY_TYPE_CLASS, "Soap\\Url", "?Soap\\Url", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_login", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, login, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_password", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, password, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_use_digest", PTN_PROPERTY_TYPE_BOOL, NULL, "bool", 0, ptn_bool(use_digest), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_digest", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_proxy_host", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, proxy_host, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_proxy_port", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, proxy_port, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_proxy_login", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, proxy_login, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_proxy_password", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, proxy_password, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_exceptions", PTN_PROPERTY_TYPE_BOOL, NULL, "bool", 0, ptn_bool(!ptn_soap_option_is_false_or_zero(options, "exceptions")), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_encoding", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, encoding, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_classmap", PTN_PROPERTY_TYPE_ARRAY, NULL, "?array", 1, classmap, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_features", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, features, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_connection_timeout", PTN_PROPERTY_TYPE_INT, NULL, "int", 0, connection_timeout, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_stream_context", PTN_PROPERTY_TYPE_NONE, NULL, NULL, 1, stream_context, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_user_agent", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, user_agent, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_keep_alive", PTN_PROPERTY_TYPE_BOOL, NULL, "bool", 0, ptn_bool(!ptn_soap_option_is_false_or_zero(options, "keep_alive")), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_ssl_method", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, ssl_method, line);
+    ptn_soap_client_declare_private_property(runtime, object, "_soap_version", PTN_PROPERTY_TYPE_INT, NULL, "int", 0, ptn_int(soap_version), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_use_proxy", PTN_PROPERTY_TYPE_INT, NULL, "?int", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "_cookies", PTN_PROPERTY_TYPE_ARRAY, NULL, "array", 0, cookies, line);
+    ptn_soap_client_declare_private_property(runtime, object, "__default_headers", PTN_PROPERTY_TYPE_ARRAY, NULL, "?array", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "__soap_fault", PTN_PROPERTY_TYPE_CLASS, "SoapFault", "?SoapFault", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "__last_request", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "__last_response", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "__last_request_headers", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, ptn_null(), line);
+    ptn_soap_client_declare_private_property(runtime, object, "__last_response_headers", PTN_PROPERTY_TYPE_STRING, NULL, "?string", 1, ptn_null(), line);
+
+    ptn_value_destroy(&uri);
+    ptn_value_destroy(&style);
+    ptn_value_destroy(&use);
+    ptn_value_destroy(&location);
+    ptn_value_destroy(&compression);
+    ptn_value_destroy(&login);
+    ptn_value_destroy(&password);
+    ptn_value_destroy(&proxy_host);
+    ptn_value_destroy(&proxy_port);
+    ptn_value_destroy(&proxy_login);
+    ptn_value_destroy(&proxy_password);
+    ptn_value_destroy(&encoding);
+    ptn_value_destroy(&classmap);
+    ptn_value_destroy(&features);
+    ptn_value_destroy(&connection_timeout);
+    ptn_value_destroy(&stream_context);
+    ptn_value_destroy(&user_agent);
+    ptn_value_destroy(&ssl_method);
+    ptn_value_destroy(&cookies);
+}
+
 static PtnSoapClientData *ptn_soap_client_data(PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
@@ -245064,6 +245282,7 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
         }
         object.as.object->native_data = data;
         object.as.object->native_data_free = ptn_soap_client_data_free;
+        ptn_soap_client_initialize_debug_properties(runtime, object, data, wsdl, argc >= 2, line);
     }
     return object;
 }
