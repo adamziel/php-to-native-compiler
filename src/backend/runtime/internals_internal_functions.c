@@ -56636,6 +56636,7 @@ static int64_t ptn_internal_expect_integer_arg(
 static int ptn_read_stream_bytes(FILE *stream, unsigned char **data_out, size_t *len_out);
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
+static char *ptn_runtime_open_basedir_resolved_alloc(const char *open_basedir);
 static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path);
 static int ptn_open_basedir_check_local_path(
     PtnRuntime *runtime,
@@ -65718,6 +65719,80 @@ static char *ptn_open_basedir_absolute_normalized_path(const char *path) {
     char *normalized = ptn_normalize_filesystem_path(joined, strlen(joined));
     free(joined);
     return normalized;
+}
+
+static void ptn_open_basedir_append_string(char **buffer, size_t *len, size_t *capacity, const char *data, size_t data_len) {
+    if (data_len == 0) {
+        return;
+    }
+    if (*len > SIZE_MAX - data_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    size_t needed = *len + data_len + 1;
+    if (needed > *capacity) {
+        size_t next_capacity = *capacity == 0 ? 64 : *capacity;
+        while (next_capacity < needed) {
+            if (next_capacity > SIZE_MAX / 2) {
+                next_capacity = needed;
+                break;
+            }
+            next_capacity *= 2;
+        }
+        char *next = realloc(*buffer, next_capacity);
+        if (next == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *buffer = next;
+        *capacity = next_capacity;
+    }
+    memcpy(*buffer + *len, data, data_len);
+    *len += data_len;
+    (*buffer)[*len] = '\0';
+}
+
+static char *ptn_runtime_open_basedir_resolved_alloc(const char *open_basedir) {
+    if (open_basedir == NULL || open_basedir[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    const char separator =
+#if defined(_WIN32)
+        ';';
+#else
+        ':';
+#endif
+    char *buffer = NULL;
+    size_t len = 0;
+    size_t capacity = 0;
+    const char *segment = open_basedir;
+    while (segment != NULL && *segment != '\0') {
+        const char *end = strchr(segment, separator);
+        size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
+        if (segment_len > 0) {
+            char *raw_segment = ptn_duplicate_string_len(segment, segment_len);
+            char *normalized = ptn_open_basedir_absolute_normalized_path(raw_segment);
+            if (len > 0) {
+                ptn_open_basedir_append_string(&buffer, &len, &capacity, &separator, 1);
+            }
+            size_t normalized_len = strlen(normalized);
+            ptn_open_basedir_append_string(&buffer, &len, &capacity, normalized, normalized_len);
+            if (ptn_path_is_separator(raw_segment[segment_len - 1]) &&
+                normalized_len > 0 &&
+                !ptn_path_is_separator(normalized[normalized_len - 1])) {
+                const char slash = '/';
+                ptn_open_basedir_append_string(&buffer, &len, &capacity, &slash, 1);
+            }
+            free(normalized);
+            free(raw_segment);
+        }
+        if (end == NULL) {
+            break;
+        }
+        segment = end + 1;
+    }
+    if (buffer == NULL) {
+        return ptn_duplicate_string("");
+    }
+    return buffer;
 }
 
 static int ptn_open_basedir_path_prefix_matches(const char *path, const char *base) {
@@ -150643,6 +150718,9 @@ static void ptn_runtime_set_open_basedir(PtnRuntime *runtime, const char *path) 
         return;
     }
     ptn_runtime_set_ini_string(&root->open_basedir, path);
+    char *resolved = ptn_runtime_open_basedir_resolved_alloc(path);
+    ptn_runtime_set_ini_string(&root->open_basedir_resolved, resolved);
+    free(resolved);
 }
 
 static void ptn_runtime_set_default_charset(PtnRuntime *runtime, const char *value) {
@@ -246315,6 +246393,18 @@ static PtnValue ptn_internal_zend_test_is_pcre_bundled(PtnRuntime *runtime, size
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_get_open_basedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *open_basedir = root == NULL ? NULL : root->open_basedir_resolved;
+    if (open_basedir == NULL || open_basedir[0] == '\0') {
+        return ptn_null();
+    }
+    return ptn_owned_string(ptn_duplicate_string(open_basedir));
+}
+
 static PtnValue ptn_internal_zend_test_is_zend_ptr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)ptn_internal_expect_integer_arg(
@@ -247127,6 +247217,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
+        { "get_open_basedir", 0, 0, ptn_internal_get_open_basedir },
         { "get_required_files", 0, 0, ptn_internal_get_required_files },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "getlastmod", 0, 0, ptn_internal_getlastmod },
@@ -248152,6 +248243,7 @@ static int ptn_internal_function_is_zend_test_helper(const char *name) {
         ptn_ascii_case_equal(name, "zend_test_compile_to_ast") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated") ||
         ptn_ascii_case_equal(name, "zend_test_deprecated_nodiscard") ||
+        ptn_ascii_case_equal(name, "get_open_basedir") ||
         ptn_ascii_case_equal(name, "zend_test_is_pcre_bundled") ||
         ptn_ascii_case_equal(name, "zend_test_is_zend_ptr") ||
         ptn_ascii_case_equal(name, "zend_test_nodiscard") ||
@@ -248533,6 +248625,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "bool",
             "bool",
             0,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "get_open_basedir")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            "string",
+            "?string",
+            1,
             1
         );
     }

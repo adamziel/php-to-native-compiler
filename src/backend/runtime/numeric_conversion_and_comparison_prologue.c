@@ -323,6 +323,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->autoloading_class_names_capacity = 0;
     runtime->last_opened_directory = NULL;
     runtime->open_basedir = NULL;
+    runtime->open_basedir_resolved = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
     runtime->fiber_stack_size = NULL;
@@ -1261,6 +1262,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->autoloading_class_names_capacity = 0;
         free(runtime->open_basedir);
         runtime->open_basedir = NULL;
+        free(runtime->open_basedir_resolved);
+        runtime->open_basedir_resolved = NULL;
         free(runtime->memory_limit);
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);

@@ -3605,6 +3605,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->open_basedir = ptn_duplicate_string(
         configured_open_basedir == NULL ? "" : configured_open_basedir
     );
+    runtime->open_basedir_resolved = ptn_duplicate_string(
+        configured_open_basedir == NULL ? "" : configured_open_basedir
+    );
     const char *configured_max_memory_limit = getenv("PTN_MAX_MEMORY_LIMIT");
     const char *configured_memory_limit = getenv("PTN_MEMORY_LIMIT");
     const char *configured_max_execution_time = getenv("PTN_MAX_EXECUTION_TIME");

@@ -2477,6 +2477,7 @@ struct PtnRuntime {
     size_t autoloading_class_names_capacity;
     PtnResource *last_opened_directory;
     char *open_basedir;
+    char *open_basedir_resolved;
     char *memory_limit;
     char *max_memory_limit;
     char *fiber_stack_size;
