@@ -59752,6 +59752,39 @@ static void ptn_emit_disabled_stream_wrapper_open_warnings(
     );
 }
 
+static PtnValue ptn_user_stream_dispatch_stream_open(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_object_has_declared_method(runtime, object, "stream_open")) {
+        return runtime->method_dispatch(runtime, object, "stream_open", argc, args, line);
+    }
+
+    PtnValue magic_arguments = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        /* PORT NOTE: stream_open's opened_path reference is transported through __call. */
+        PtnValue argument = (i == 3 && ptn_value_is_by_ref_argument_source(args[i]))
+            ? ptn_value_clone(args[i])
+            : ptn_value_deep_clone(ptn_value_deref(args[i]));
+        ptn_array_set_entry(magic_arguments.as.array, ptn_array_int_key((int64_t)i), argument);
+    }
+
+    PtnValue magic_args[2] = {
+        ptn_string("stream_open"),
+        magic_arguments
+    };
+    PtnValue result = runtime->method_dispatch(runtime, object, "__call", 2, magic_args, line);
+    ptn_value_destroy(&magic_args[0]);
+    ptn_value_destroy(&magic_args[1]);
+    return result;
+}
+
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
     const char *function_name,
@@ -59829,7 +59862,7 @@ static int ptn_try_open_user_stream_wrapper(
         ptn_int(0),
         opened_path
     };
-    PtnValue open_result = runtime->method_dispatch(runtime, object, "stream_open", 4, open_args, line);
+    PtnValue open_result = ptn_user_stream_dispatch_stream_open(runtime, object, 4, open_args, line);
     ptn_value_destroy(&open_args[0]);
     ptn_value_destroy(&open_args[1]);
     ptn_value_destroy(&open_args[2]);
