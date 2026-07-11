@@ -737,7 +737,7 @@ pub fn emit_c(module: &Module) -> String {
         &parameter_default_diagnostics,
         &module.source_file,
     );
-    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
+    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     emit_declaration_fatals(
         &mut out,
         &declaration_fatals,
@@ -10302,6 +10302,7 @@ struct TraitUseDeprecation {
 struct MagicVisibilityWarning {
     class_name: String,
     method_name: String,
+    source_file: String,
     line: usize,
 }
 
@@ -10459,22 +10460,67 @@ fn emit_trait_use_deprecations(out: &mut String, deprecations: &[TraitUseDepreca
     }
 }
 
-fn emit_magic_visibility_warnings(
-    out: &mut String,
-    warnings: &[MagicVisibilityWarning],
-    source_file: &str,
-) {
+fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityWarning]) {
     for warning in warnings {
-        out.push_str("    ptn_emit_compile_warning(&runtime, \"The magic method ");
-        out.push_str(&c_string(&warning.class_name));
-        out.push_str("::");
-        out.push_str(&c_string(&warning.method_name));
-        out.push_str("() must have public visibility\", \"");
-        out.push_str(&c_string(source_file));
-        out.push_str("\", ");
-        out.push_str(&warning.line.to_string());
-        out.push_str(");\n");
+        emit_magic_visibility_warning_call(
+            out,
+            "    ",
+            &warning.class_name,
+            &warning.method_name,
+            &warning.source_file,
+            warning.line,
+        );
     }
+}
+
+fn emit_magic_visibility_warnings_for_class(
+    out: &mut String,
+    class: &ClassDecl,
+    functions: &[FunctionDecl],
+    source_file: &str,
+    indent: &str,
+) {
+    for method in &class.methods {
+        if method.visibility == PropertyVisibility::Public
+            || !magic_method_requires_public_visibility(&method.name)
+        {
+            continue;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            continue;
+        };
+        if magic_declaration_fatal_message(class, method, function).is_some() {
+            continue;
+        }
+        emit_magic_visibility_warning_call(
+            out,
+            indent,
+            &class.name,
+            &method.name,
+            source_file,
+            method.line,
+        );
+    }
+}
+
+fn emit_magic_visibility_warning_call(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    method_name: &str,
+    source_file: &str,
+    line: usize,
+) {
+    out.push_str(indent);
+    out.push_str("ptn_emit_compile_warning(&runtime, \"The magic method ");
+    out.push_str(&c_string(class_name));
+    out.push_str("::");
+    out.push_str(&c_string(method_name));
+    out.push_str("() must have public visibility\", \"");
+    out.push_str(&c_string(source_file));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
 }
 
 fn emit_magic_debug_info_return_deprecations(
@@ -33968,6 +34014,15 @@ fn emit_instruction(
         } => {
             let class = &values.classes[*class_index];
             out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
+            if class_has_eval_source(class) {
+                emit_magic_visibility_warnings_for_class(
+                    out,
+                    class,
+                    &values.user_functions,
+                    class_declaration_diagnostic_source_path(class, source_path),
+                    "        ",
+                );
+            }
             out.push_str("        if (runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("] == 1) {\n");
@@ -37742,6 +37797,9 @@ fn collect_trait_use_deprecations_for_user(
 fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibilityWarning> {
     let mut warnings = Vec::new();
     for class in &module.classes {
+        if class_has_eval_source(class) {
+            continue;
+        }
         for method in &class.methods {
             if method.visibility == PropertyVisibility::Public
                 || !magic_method_requires_public_visibility(&method.name)
@@ -37757,6 +37815,7 @@ fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibil
             warnings.push(MagicVisibilityWarning {
                 class_name: class.name.clone(),
                 method_name: method.name.clone(),
+                source_file: module.source_file.clone(),
                 line: method.line,
             });
         }
@@ -38117,11 +38176,15 @@ fn class_declaration_diagnostic_source_path<'a>(
     class: &'a ClassDecl,
     source_path: &'a str,
 ) -> &'a str {
-    if class.source_file.ends_with(" : eval()'d code") {
+    if class_has_eval_source(class) {
         &class.source_file
     } else {
         source_path
     }
+}
+
+fn class_has_eval_source(class: &ClassDecl) -> bool {
+    class.source_file.ends_with(" : eval()'d code")
 }
 
 fn collect_class_declaration_fatals(

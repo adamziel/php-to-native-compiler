@@ -28099,6 +28099,51 @@ var_dump(new EvalTypedProps);
 }
 
 #[test]
+fn compile_eval_magic_visibility_warning_uses_active_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-magic-visibility-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-magic-visibility-handler.php");
+    let output = root.join("eval-magic-visibility-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function ($severity, $message, $file, $line) {
+    echo $severity, "\n";
+    echo $message, "\n";
+    echo strpos($file, "eval()'d code") !== false ? "eval-file\n" : "main-file\n";
+    echo $line, "\n";
+    return true;
+});
+
+eval('class EvalMagicVisibility { private function __invoke() {} }');
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2\n",
+            "The magic method EvalMagicVisibility::__invoke() must have public visibility\n",
+            "eval-file\n",
+            "1\n",
+            "after\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(
+        "ptn_emit_compile_warning(&runtime, \"The magic method EvalMagicVisibility::__invoke()"
+    ));
+}
+
+#[test]
 fn compile_eval_concrete_class_with_abstract_method_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-eval-abstract-method-fatal");
     fs::create_dir_all(&root).unwrap();
