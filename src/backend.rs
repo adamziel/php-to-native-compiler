@@ -10758,6 +10758,38 @@ fn emit_return_type_boundary(
     }
 }
 
+fn emit_pre_finally_return_type_coercion(out: &mut String, values: &ValueEmitter) {
+    if values.current_function_is_generator {
+        return;
+    }
+    let Some(function_index) = values.current_function_index else {
+        return;
+    };
+    let Some(function) = values.user_functions.get(function_index) else {
+        return;
+    };
+    if function.return_by_ref || !matches!(function.return_type.as_ref(), Some(TypeHint::Int)) {
+        return;
+    }
+    let function_name = function_return_type_error_display_name(function, &values.classes);
+    out.push_str("    if (ptn_return_value_was_set && !runtime.strict_types) {\n");
+    out.push_str(
+        "        PtnValue ptn_pre_finally_return_source = ptn_value_deref(ptn_return_value);\n",
+    );
+    out.push_str("        if (ptn_pre_finally_return_source.type == PTN_FLOAT && ptn_userland_double_fits_int(ptn_pre_finally_return_source.as.floating)) {\n");
+    out.push_str("            PtnValue ptn_pre_finally_typed_return_value;\n");
+    out.push_str("            if (ptn_coerce_user_return_int(&runtime, \"");
+    out.push_str(&c_string(&function_name));
+    out.push_str(
+        "\", \"int\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_pre_finally_typed_return_value)) {\n",
+    );
+    out.push_str("                ptn_value_drop(&ptn_return_value);\n");
+    out.push_str("                ptn_return_value = ptn_pre_finally_typed_return_value;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+}
+
 fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHint) -> String {
     type_hint_condition_with_static_scope(value_expr, runtime_expr, type_hint, None)
 }
@@ -34515,8 +34547,11 @@ fn emit_instruction(
                         }
                     }
                 }
-                emit_exceptional_finally_return_override(out, values, target);
                 let context_indices = return_cleanup_context_indices(finally_stack);
+                if !context_indices.is_empty() {
+                    emit_pre_finally_return_type_coercion(out, values);
+                }
+                emit_exceptional_finally_return_override(out, values, target);
                 emit_jump_through_finally_contexts_with_line(
                     out,
                     finally_stack,
@@ -36072,6 +36107,7 @@ fn emit_try(
             out.push_str(" = 0;\n");
             out.push_str("        }\n");
         }
+        emit_pre_finally_return_type_coercion(out, values);
         let finally_generator_yield_abort_target =
             generator_yield_abort_target_for_finally(values, finally_body, Some(return_target))
                 .map(str::to_string);
