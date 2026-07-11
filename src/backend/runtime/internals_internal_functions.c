@@ -87759,6 +87759,53 @@ static int ptn_normalizer_normalized_slice(
     return 1;
 }
 
+static char *ptn_normalizer_casefold_kc_cf_alloc(const char *data, size_t len, size_t *out_len) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < len;) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte >= 'A' && byte <= 'Z') {
+            ptn_string_buffer_append_char(&output, (char)(byte + ('a' - 'A')));
+            i++;
+            continue;
+        }
+        if (i + 1 < len &&
+            (unsigned char)data[i] == 0xC3u &&
+            (unsigned char)data[i + 1] == 0x85u) {
+            ptn_string_buffer_append_len(&output, "\xC3\xA5", 2);
+            i += 2;
+            continue;
+        }
+        if (i + 1 < len &&
+            (unsigned char)data[i] == 0xCEu &&
+            (unsigned char)data[i + 1] == 0xA9u) {
+            ptn_string_buffer_append_len(&output, "\xCF\x89", 2);
+            i += 2;
+            continue;
+        }
+        ptn_string_buffer_append_char(&output, data[i]);
+        i++;
+    }
+    *out_len = output.len;
+    return output.data;
+}
+
+static char *ptn_normalizer_normalized_alloc(
+    const char *data,
+    size_t len,
+    int64_t form,
+    size_t *out_len
+) {
+    const char *normalized = NULL;
+    size_t normalized_len = 0;
+    ptn_normalizer_normalized_slice(data, len, form, &normalized, &normalized_len);
+    if (form == PTN_NORMALIZER_FORM_KC_CF) {
+        return ptn_normalizer_casefold_kc_cf_alloc(normalized, normalized_len, out_len);
+    }
+    *out_len = normalized_len;
+    return ptn_duplicate_string_len(normalized, normalized_len);
+}
+
 static PtnValue ptn_internal_normalizer_normalize_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -87776,10 +87823,9 @@ static PtnValue ptn_internal_normalizer_normalize_named(
         return ptn_null();
     }
     int64_t form = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_NORMALIZER_FORM_C;
-    const char *normalized = NULL;
     size_t normalized_len = 0;
-    ptn_normalizer_normalized_slice(input.data, input.len, form, &normalized, &normalized_len);
-    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(normalized, normalized_len), normalized_len);
+    char *normalized = ptn_normalizer_normalized_alloc(input.data, input.len, form, &normalized_len);
+    PtnValue result = ptn_owned_string_len(normalized, normalized_len);
     ptn_string_operand_free(input);
     ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
     return result;
@@ -87802,10 +87848,10 @@ static PtnValue ptn_internal_normalizer_is_normalized_named(
         return ptn_null();
     }
     int64_t form = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_NORMALIZER_FORM_C;
-    const char *normalized = NULL;
     size_t normalized_len = 0;
-    ptn_normalizer_normalized_slice(input.data, input.len, form, &normalized, &normalized_len);
+    char *normalized = ptn_normalizer_normalized_alloc(input.data, input.len, form, &normalized_len);
     int is_normalized = input.len == normalized_len && memcmp(input.data, normalized, input.len) == 0;
+    free(normalized);
     ptn_string_operand_free(input);
     ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
     return ptn_bool(is_normalized);

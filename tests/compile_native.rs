@@ -72668,6 +72668,10 @@ var_dump(Normalizer::isNormalized($angstrom, Normalizer::FORM_C));\n\
 $fi = \"\\xEF\\xAC\\x81\";\n\
 hex_dump(Normalizer::normalize($fi, Normalizer::FORM_KC));\n\
 var_dump(normalizer_is_normalized($fi, Normalizer::FORM_KC));\n\
+hex_dump(Normalizer::normalize('ABC', Normalizer::FORM_KC_CF));\n\
+var_dump(normalizer_is_normalized('ABC', Normalizer::FORM_KC_CF));\n\
+hex_dump(Normalizer::normalize($angstrom, Normalizer::FORM_KC_CF));\n\
+hex_dump(Normalizer::normalize(\"\\xE2\\x84\\xA6||\\xCE\\xA9\", Normalizer::FORM_KC_CF));\n\
 hex_dump(Normalizer::getRawDecomposition(\"\\xEF\\xBF\\x9A\", Normalizer::FORM_KC));\n\
 hex_dump(normalizer_get_raw_decomposition(\"\\xEF\\xB7\\xBA\", Normalizer::FORM_KC));\n\
 hex_dump(Normalizer::getRawDecomposition('a', Normalizer::FORM_KC));\n\
@@ -72701,6 +72705,10 @@ string(26) \"41cc8a7c7c41cc8a7c7c41cc8a\"\n\
 bool(false)\n\
 string(4) \"6669\"\n\
 bool(false)\n\
+string(6) \"616263\"\n\
+bool(false)\n\
+string(20) \"c3a57c7cc3a57c7cc3a5\"\n\
+string(12) \"cf897c7ccf89\"\n\
 string(6) \"e385a1\"\n\
 string(66) \"d8b5d984d98920d8a7d984d984d98720d8b9d984d98ad98720d988d8b3d984d985\"\n\
 NULL\n\
