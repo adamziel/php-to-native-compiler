@@ -139838,12 +139838,16 @@ static const char *ptn_ini_syntax_detail_for_failed_section(PtnIniText text) {
             continue;
         }
         size_t depth = 1;
+        int saw_fallback = 0;
         i += 2;
         while (i < text.len && depth > 0) {
             if (text.data[i] == '$' && i + 1 < text.len && text.data[i + 1] == '{') {
                 depth++;
                 i += 2;
                 continue;
+            }
+            if (depth == 1 && text.data[i] == ':' && i + 1 < text.len && text.data[i + 1] == '-') {
+                saw_fallback = 1;
             }
             if (text.data[i] == '}') {
                 depth--;
@@ -139854,7 +139858,9 @@ static const char *ptn_ini_syntax_detail_for_failed_section(PtnIniText text) {
             i++;
         }
         if (depth != 0) {
-            return "unexpected end of file, expecting '}'";
+            return saw_fallback
+                ? "unexpected TC_FALLBACK, expecting TC_VARNAME"
+                : "unexpected end of file, expecting TC_FALLBACK or '}'";
         }
     }
     return "unexpected end of section";
