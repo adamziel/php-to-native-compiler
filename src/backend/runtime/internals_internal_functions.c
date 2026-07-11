@@ -246677,7 +246677,7 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
     } else if (request_starts_with_encoded_array) {
-        ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
@@ -246687,12 +246687,12 @@ static int ptn_soap_client_record_non_wsdl_request(
             ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
         }
     } else if (request_has_soap_param && request_needs_ns2 && !request_has_apache_map) {
-        ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
-        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
         ptn_string_buffer_append(&buffer, " xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"");
         if (request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
         }
+        ptn_string_buffer_append(&buffer, " xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\"");
+        ptn_string_buffer_append(&buffer, " xmlns:ns2=\"http://soapinterop.org/xsd\"");
     } else {
         if (request_has_nil && request_needs_xsi) {
             ptn_string_buffer_append(&buffer, " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");

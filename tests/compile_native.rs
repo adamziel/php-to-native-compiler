@@ -88335,7 +88335,7 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
         "{stdout}"
     );
     assert!(
-        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echo2DStringArray><param0"),
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echo2DStringArray><param0"),
         "{stdout}"
     );
     assert!(
@@ -88360,6 +88360,10 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
     );
     assert!(
         stdout.contains("<varArray SOAP-ENC:arrayType=\"xsd:string[2]\" xsi:type=\"ns2:ArrayOfString\"><item xsi:type=\"xsd:string\">red</item><item xsi:type=\"xsd:string\">blue</item></varArray>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:ns2=\"http://soapinterop.org/xsd\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoNestedArray><inputStruct"),
         "{stdout}"
     );
     assert!(
