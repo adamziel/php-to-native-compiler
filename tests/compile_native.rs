@@ -73572,6 +73572,52 @@ Object of class stdClass could not be converted to string\n"
 }
 
 #[test]
+fn compile_intl_list_formatter_type_width_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-list-formatter-type-width");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-list-formatter-type-width.php");
+    let output = root.join("intl-list-formatter-type-width-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo (new IntlListFormatter('en_US', IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_SHORT))->format([1, 2, 3]), \"\\n\";\n\
+echo (new IntlListFormatter('en_US', IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_NARROW))->format([1, 2, 3]), \"\\n\";\n\
+echo (new IntlListFormatter('en_US', IntlListFormatter::TYPE_OR, IntlListFormatter::WIDTH_WIDE))->format([1, 2, 3]), \"\\n\";\n\
+echo (new IntlListFormatter('en_US', IntlListFormatter::TYPE_UNITS, IntlListFormatter::WIDTH_NARROW))->format([1, 2, 3]), \"\\n\";\n\
+echo (new IntlListFormatter('en_GB', IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_WIDE))->format([1, 2, 3]), \"\\n\";\n\
+echo (new IntlListFormatter('fr', IntlListFormatter::TYPE_OR, IntlListFormatter::WIDTH_SHORT))->format([1, 2, 3]), \"\\n\";\n\
+try {\n\
+    new IntlListFormatter('ro', 99);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    new IntlListFormatter('ro', IntlListFormatter::TYPE_AND, 99);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1, 2, & 3\n\
+1, 2, 3\n\
+1, 2, or 3\n\
+1 2 3\n\
+1, 2 and 3\n\
+1, 2 ou 3\n\
+IntlListFormatter::__construct(): Argument #2 ($type) must be one of IntlListFormatter::TYPE_AND, IntlListFormatter::TYPE_OR, or IntlListFormatter::TYPE_UNITS\n\
+IntlListFormatter::__construct(): Argument #3 ($width) must be one of IntlListFormatter::WIDTH_WIDE, IntlListFormatter::WIDTH_SHORT, or IntlListFormatter::WIDTH_NARROW\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_calendar_unconstructed_subclass_debug_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-unconstructed-debug");
     fs::create_dir_all(&root).unwrap();

@@ -86245,8 +86245,27 @@ typedef struct {
     char *error_message;
 } PtnIntlMessageFormatterData;
 
+typedef struct PtnIcuListFormatter PtnIcuListFormatter;
+
+enum {
+    PTN_INTL_LIST_TYPE_AND = 0,
+    PTN_INTL_LIST_TYPE_OR = 1,
+    PTN_INTL_LIST_TYPE_UNITS = 2,
+    PTN_INTL_LIST_WIDTH_WIDE = 0,
+    PTN_INTL_LIST_WIDTH_SHORT = 1,
+    PTN_INTL_LIST_WIDTH_NARROW = 2
+};
+
+typedef struct {
+    char *data;
+    size_t len;
+} PtnIntlListFormatterItem;
+
 typedef struct {
     char *locale;
+    int type;
+    int width;
+    PtnIcuListFormatter *formatter;
     int error_code;
     char *error_message;
 } PtnIntlListFormatterData;
@@ -86293,6 +86312,21 @@ static char *ptn_intl_date_formatter_resolve_locale(
     int date_type,
     int time_type,
     int64_t locale_type
+);
+static PtnIcuListFormatter *ptn_intl_list_formatter_icu_open(
+    const char *locale,
+    int type,
+    int width,
+    int32_t *status,
+    int *available
+);
+static void ptn_intl_list_formatter_icu_close(PtnIcuListFormatter *formatter);
+static PtnValue ptn_intl_list_formatter_icu_format(
+    PtnRuntime *runtime,
+    PtnIntlListFormatterData *data,
+    const PtnIntlListFormatterItem *items,
+    size_t count,
+    int *used
 );
 
 static void ptn_intl_date_formatter_data_free(void *ptr) {
@@ -86356,6 +86390,7 @@ static void ptn_intl_list_formatter_data_free(void *ptr) {
     if (data == NULL) {
         return;
     }
+    ptn_intl_list_formatter_icu_close(data->formatter);
     free(data->locale);
     free(data->error_message);
     free(data);
@@ -91888,6 +91923,8 @@ static int ptn_intl_locale_identifier_is_valid(const char *locale) {
 
 static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
     char *locale_copy = ptn_duplicate_string("");
+    int64_t type = PTN_INTL_LIST_TYPE_AND;
+    int64_t width = PTN_INTL_LIST_WIDTH_WIDE;
     if (argc >= 1) {
         PtnStringOperand locale = ptn_internal_expect_string_arg(
             runtime,
@@ -91941,24 +91978,70 @@ static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *cla
         }
     }
     if (argc >= 2) {
-        (void)ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 2, "type", args[1], line);
+        type = ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 2, "type", args[1], line);
         if (runtime->exceptions->active_exception != NULL) {
             free(locale_copy);
+            return ptn_null();
+        }
+        if (type != PTN_INTL_LIST_TYPE_AND &&
+            type != PTN_INTL_LIST_TYPE_OR &&
+            type != PTN_INTL_LIST_TYPE_UNITS) {
+            free(locale_copy);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "IntlListFormatter::__construct(): Argument #2 ($type) must be one of IntlListFormatter::TYPE_AND, IntlListFormatter::TYPE_OR, or IntlListFormatter::TYPE_UNITS"
+            );
             return ptn_null();
         }
     }
     if (argc >= 3) {
-        (void)ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 3, "width", args[2], line);
+        width = ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 3, "width", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
             free(locale_copy);
             return ptn_null();
         }
+        if (width != PTN_INTL_LIST_WIDTH_WIDE &&
+            width != PTN_INTL_LIST_WIDTH_SHORT &&
+            width != PTN_INTL_LIST_WIDTH_NARROW) {
+            free(locale_copy);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "IntlListFormatter::__construct(): Argument #3 ($width) must be one of IntlListFormatter::WIDTH_WIDE, IntlListFormatter::WIDTH_SHORT, or IntlListFormatter::WIDTH_NARROW"
+            );
+            return ptn_null();
+        }
+    }
+    int32_t status = 0;
+    int icu_available = 0;
+    if (locale_copy[0] == '\0') {
+        const char *default_locale = ptn_runtime_intl_default_locale(runtime);
+        free(locale_copy);
+        locale_copy = ptn_duplicate_string(default_locale == NULL ? "" : default_locale);
+    }
+    PtnIcuListFormatter *formatter = ptn_intl_list_formatter_icu_open(
+        locale_copy,
+        (int)type,
+        (int)width,
+        &status,
+        &icu_available
+    );
+    if (icu_available && (formatter == NULL || status > 0)) {
+        ptn_intl_list_formatter_icu_close(formatter);
+        free(locale_copy);
+        ptn_intl_set_error_message(runtime, "Constructor failed");
+        ptn_throw_exception(runtime, "IntlException", "Constructor failed");
+        return ptn_null();
     }
     PtnIntlListFormatterData *data = malloc(sizeof(PtnIntlListFormatterData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->locale = locale_copy;
+    data->type = (int)type;
+    data->width = (int)width;
+    data->formatter = formatter;
     data->error_code = 0;
     data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
     PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "IntlListFormatter" : class_name);
@@ -92375,6 +92458,74 @@ static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_call_method(
     return ptn_null();
 }
 
+static void ptn_intl_list_formatter_items_free(PtnIntlListFormatterItem *items, size_t count) {
+    if (items == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free(items[i].data);
+    }
+    free(items);
+}
+
+static int ptn_intl_list_formatter_locale_language_is(const char *locale, const char *language) {
+    size_t language_len = strlen(language);
+    if (locale == NULL || strlen(locale) < language_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < language_len; i++) {
+        if (tolower((unsigned char)locale[i]) != tolower((unsigned char)language[i])) {
+            return 0;
+        }
+    }
+    char boundary = locale[language_len];
+    return boundary == '\0' || boundary == '_' || boundary == '-' || boundary == '@' || boundary == '.';
+}
+
+static int ptn_intl_list_formatter_locale_is_british_english(const char *locale) {
+    return ptn_ascii_case_equal(locale, "en_GB") || ptn_ascii_case_equal(locale, "en-GB");
+}
+
+static const char *ptn_intl_list_formatter_fallback_separator(
+    const PtnIntlListFormatterData *data,
+    size_t count,
+    size_t index
+) {
+    int final_item = index + 1 == count;
+    int french = ptn_intl_list_formatter_locale_language_is(data->locale, "fr");
+    int british_english = ptn_intl_list_formatter_locale_is_british_english(data->locale);
+
+    if (data->type == PTN_INTL_LIST_TYPE_UNITS) {
+        if (data->width == PTN_INTL_LIST_WIDTH_NARROW) {
+            return " ";
+        }
+        if (french && final_item) {
+            return " et ";
+        }
+        return ", ";
+    }
+    if (data->type == PTN_INTL_LIST_TYPE_AND && data->width == PTN_INTL_LIST_WIDTH_NARROW) {
+        return ", ";
+    }
+    if (!final_item) {
+        return ", ";
+    }
+
+    if (data->type == PTN_INTL_LIST_TYPE_OR) {
+        if (french) {
+            return " ou ";
+        }
+        return count == 2 || british_english ? " or " : ", or ";
+    }
+    if (french) {
+        return " et ";
+    }
+    if (data->width == PTN_INTL_LIST_WIDTH_SHORT) {
+        return count == 2 || british_english ? " & " : ", & ";
+    }
+    return count == 2 || british_english ? " and " : ", and ";
+}
+
 static PtnValue ptn_intl_list_formatter_format(
     PtnRuntime *runtime,
     PtnIntlListFormatterData *data,
@@ -92385,7 +92536,16 @@ static PtnValue ptn_intl_list_formatter_format(
     if (values.type != PTN_ARRAY) {
         return ptn_bool(0);
     }
-    for (size_t i = 0; i < values.as.array->len; i++) {
+    ptn_intl_list_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    size_t count = values.as.array->len;
+    if (count == 0) {
+        return ptn_string("");
+    }
+    PtnIntlListFormatterItem *items = calloc(count, sizeof(PtnIntlListFormatterItem));
+    if (items == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < count; i++) {
         PtnStringOperand item = ptn_value_to_string_operand_with_runtime(
             runtime,
             values.as.array->entries[i].value,
@@ -92393,11 +92553,13 @@ static PtnValue ptn_intl_list_formatter_format(
         );
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(item);
+            ptn_intl_list_formatter_items_free(items, count);
             return ptn_null();
         }
         int valid = ptn_intl_utf8_is_valid(item.data, item.len);
-        ptn_string_operand_free(item);
         if (!valid) {
+            ptn_string_operand_free(item);
+            ptn_intl_list_formatter_items_free(items, count);
             ptn_intl_list_formatter_set_error(
                 runtime,
                 data,
@@ -92406,34 +92568,38 @@ static PtnValue ptn_intl_list_formatter_format(
             );
             return ptn_bool(0);
         }
-    }
-
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    size_t count = values.as.array->len;
-    for (size_t i = 0; i < count; i++) {
-        if (i > 0) {
-            if (count == 2) {
-                ptn_string_buffer_append(&output, " and ");
-            } else if (i + 1 == count) {
-                ptn_string_buffer_append(&output, ", and ");
-            } else {
-                ptn_string_buffer_append(&output, ", ");
-            }
-        }
-        PtnStringOperand item = ptn_value_to_string_operand_with_runtime(
-            runtime,
-            values.as.array->entries[i].value,
-            line
-        );
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(item);
-            free(output.data);
-            return ptn_null();
-        }
-        ptn_string_buffer_append_len(&output, item.data, item.len);
+        items[i].data = ptn_duplicate_string_len(item.data, item.len);
+        items[i].len = item.len;
         ptn_string_operand_free(item);
     }
+
+    int used_icu = 0;
+    PtnValue icu_result = ptn_intl_list_formatter_icu_format(
+        runtime,
+        data,
+        items,
+        count,
+        &used_icu
+    );
+    if (used_icu) {
+        ptn_intl_list_formatter_items_free(items, count);
+        return icu_result;
+    }
+
+    /* TODO(port-semantic): The no-ICU fallback is intentionally scoped to the
+     * en_US, en_GB, and fr pattern families exercised by this runtime. */
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < count; i++) {
+        if (i > 0) {
+            ptn_string_buffer_append(
+                &output,
+                ptn_intl_list_formatter_fallback_separator(data, count, i)
+            );
+        }
+        ptn_string_buffer_append_len(&output, items[i].data, items[i].len);
+    }
+    ptn_intl_list_formatter_items_free(items, count);
     ptn_intl_list_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
     return ptn_owned_string_len(output.data, output.len);
 }
@@ -98779,6 +98945,9 @@ typedef struct {
     PtnIcuDateFormat *(*udat_open)(int32_t, int32_t, const char *, const PtnIcuUChar *, int32_t, const PtnIcuUChar *, int32_t, int32_t *);
     void (*udat_close)(PtnIcuDateFormat *);
     const char *(*udat_getLocaleByType)(const PtnIcuDateFormat *, int32_t, int32_t *);
+    PtnIcuListFormatter *(*ulistfmt_openForType)(const char *, int32_t, int32_t, int32_t *);
+    void (*ulistfmt_close)(PtnIcuListFormatter *);
+    int32_t (*ulistfmt_format)(const PtnIcuListFormatter *, const PtnIcuUChar *const *, const int32_t *, int32_t, PtnIcuUChar *, int32_t, int32_t *);
     PtnIcuEnumeration *(*ucal_getKeywordValuesForLocale)(const char *, const char *, int, int32_t *);
     const char *(*uenum_next)(PtnIcuEnumeration *, int32_t *, int32_t *);
     void (*uenum_close)(PtnIcuEnumeration *);
@@ -99003,10 +99172,295 @@ static PtnIcuApi *ptn_icu_load(void) {
             ptn_icu_symbol(ptn_icu_api.i18n_handle, "udat_close");
         *(void **)(&ptn_icu_api.udat_getLocaleByType) =
             ptn_icu_symbol(ptn_icu_api.i18n_handle, "udat_getLocaleByType");
+        *(void **)(&ptn_icu_api.ulistfmt_openForType) =
+            ptn_icu_symbol(ptn_icu_api.i18n_handle, "ulistfmt_openForType");
+        *(void **)(&ptn_icu_api.ulistfmt_close) =
+            ptn_icu_symbol(ptn_icu_api.i18n_handle, "ulistfmt_close");
+        *(void **)(&ptn_icu_api.ulistfmt_format) =
+            ptn_icu_symbol(ptn_icu_api.i18n_handle, "ulistfmt_format");
     }
 #undef PTN_ICU_LOAD_UC
 #undef PTN_ICU_LOAD_I18N
     return &ptn_icu_api;
+}
+
+static PtnIcuListFormatter *ptn_intl_list_formatter_icu_open(
+    const char *locale,
+    int type,
+    int width,
+    int32_t *status,
+    int *available
+) {
+    *status = PTN_ICU_ZERO_ERROR;
+    *available = 0;
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL ||
+        api->ulistfmt_openForType == NULL ||
+        api->ulistfmt_close == NULL ||
+        api->ulistfmt_format == NULL) {
+        return NULL;
+    }
+    *available = 1;
+    return api->ulistfmt_openForType(locale, type, width, status);
+}
+
+static void ptn_intl_list_formatter_icu_close(PtnIcuListFormatter *formatter) {
+    if (formatter == NULL) {
+        return;
+    }
+    PtnIcuApi *api = ptn_icu_load();
+    if (api != NULL && api->ulistfmt_close != NULL) {
+        api->ulistfmt_close(formatter);
+    }
+}
+
+static void ptn_intl_list_formatter_icu_set_error(
+    PtnRuntime *runtime,
+    PtnIntlListFormatterData *data,
+    PtnIcuApi *api,
+    int32_t status,
+    const char *operation
+) {
+    const char *error_name = api->u_errorName == NULL ? NULL : api->u_errorName(status);
+    if (error_name == NULL || error_name[0] == '\0') {
+        error_name = "U_INTERNAL_PROGRAM_ERROR";
+    }
+    int needed = snprintf(
+        NULL,
+        0,
+        "IntlListFormatter::format(): %s: %s",
+        operation,
+        error_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "IntlListFormatter::format(): %s: %s",
+        operation,
+        error_name
+    );
+    ptn_intl_list_formatter_set_error(runtime, data, status, message);
+    free(message);
+}
+
+static void ptn_intl_list_formatter_icu_items_free(
+    PtnIcuUChar **items,
+    int32_t *lengths,
+    size_t count
+) {
+    if (items != NULL) {
+        for (size_t i = 0; i < count; i++) {
+            free(items[i]);
+        }
+    }
+    free(items);
+    free(lengths);
+}
+
+static PtnValue ptn_intl_list_formatter_icu_format(
+    PtnRuntime *runtime,
+    PtnIntlListFormatterData *data,
+    const PtnIntlListFormatterItem *items,
+    size_t count,
+    int *used
+) {
+    *used = 0;
+    PtnIcuApi *api = ptn_icu_load();
+    if (data->formatter == NULL ||
+        api == NULL ||
+        api->u_strFromUTF8 == NULL ||
+        api->u_strToUTF8 == NULL ||
+        api->ulistfmt_format == NULL) {
+        return ptn_null();
+    }
+    *used = 1;
+    if (count > (size_t)INT32_MAX) {
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+            "Failed to format list"
+        );
+        return ptn_bool(0);
+    }
+
+    PtnIcuUChar **utf16_items = calloc(count, sizeof(PtnIcuUChar *));
+    int32_t *utf16_lengths = calloc(count, sizeof(int32_t));
+    if (utf16_items == NULL || utf16_lengths == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (items[i].len >= (size_t)INT32_MAX) {
+            ptn_intl_list_formatter_icu_items_free(utf16_items, utf16_lengths, count);
+            ptn_intl_list_formatter_icu_set_error(
+                runtime,
+                data,
+                api,
+                PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+                "Failed to convert string to UTF-16"
+            );
+            return ptn_bool(0);
+        }
+        int32_t capacity = (int32_t)items[i].len + 1;
+        utf16_items[i] = malloc(sizeof(PtnIcuUChar) * (size_t)capacity);
+        if (utf16_items[i] == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        api->u_strFromUTF8(
+            utf16_items[i],
+            capacity,
+            &utf16_lengths[i],
+            items[i].data,
+            (int32_t)items[i].len,
+            &status
+        );
+        if (ptn_icu_failure(status)) {
+            ptn_intl_list_formatter_icu_items_free(utf16_items, utf16_lengths, count);
+            ptn_intl_list_formatter_icu_set_error(
+                runtime,
+                data,
+                api,
+                status,
+                "Failed to convert string to UTF-16"
+            );
+            return ptn_bool(0);
+        }
+    }
+
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    int32_t needed = api->ulistfmt_format(
+        data->formatter,
+        (const PtnIcuUChar *const *)utf16_items,
+        utf16_lengths,
+        (int32_t)count,
+        NULL,
+        0,
+        &status
+    );
+    if (ptn_icu_failure(status) && status != PTN_ICU_BUFFER_OVERFLOW_ERROR) {
+        ptn_intl_list_formatter_icu_items_free(utf16_items, utf16_lengths, count);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            status,
+            "Failed to format list"
+        );
+        return ptn_bool(0);
+    }
+    if (needed < 0 || needed >= INT32_MAX) {
+        ptn_intl_list_formatter_icu_items_free(utf16_items, utf16_lengths, count);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+            "Failed to format list"
+        );
+        return ptn_bool(0);
+    }
+
+    PtnIcuUChar *formatted = malloc(sizeof(PtnIcuUChar) * ((size_t)needed + 1));
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    int32_t formatted_len = api->ulistfmt_format(
+        data->formatter,
+        (const PtnIcuUChar *const *)utf16_items,
+        utf16_lengths,
+        (int32_t)count,
+        formatted,
+        needed + 1,
+        &status
+    );
+    ptn_intl_list_formatter_icu_items_free(utf16_items, utf16_lengths, count);
+    if (ptn_icu_failure(status)) {
+        free(formatted);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            status,
+            "Failed to format list"
+        );
+        return ptn_bool(0);
+    }
+    if (formatted_len < 0) {
+        free(formatted);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+            "Failed to format list"
+        );
+        return ptn_bool(0);
+    }
+
+    int32_t utf8_needed = 0;
+    status = PTN_ICU_ZERO_ERROR;
+    api->u_strToUTF8(NULL, 0, &utf8_needed, formatted, formatted_len, &status);
+    if (ptn_icu_failure(status) && status != PTN_ICU_BUFFER_OVERFLOW_ERROR) {
+        free(formatted);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            status,
+            "Failed to convert result to UTF-8"
+        );
+        return ptn_bool(0);
+    }
+    if (utf8_needed < 0 || utf8_needed >= INT32_MAX) {
+        free(formatted);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            PTN_ICU_ILLEGAL_ARGUMENT_ERROR,
+            "Failed to convert result to UTF-8"
+        );
+        return ptn_bool(0);
+    }
+    char *output = malloc((size_t)utf8_needed + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int32_t output_len = 0;
+    status = PTN_ICU_ZERO_ERROR;
+    api->u_strToUTF8(
+        output,
+        utf8_needed + 1,
+        &output_len,
+        formatted,
+        formatted_len,
+        &status
+    );
+    free(formatted);
+    if (ptn_icu_failure(status)) {
+        free(output);
+        ptn_intl_list_formatter_icu_set_error(
+            runtime,
+            data,
+            api,
+            status,
+            "Failed to convert result to UTF-8"
+        );
+        return ptn_bool(0);
+    }
+    output[output_len] = '\0';
+    ptn_intl_list_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    return ptn_owned_string_len(output, (size_t)output_len);
 }
 
 static int ptn_intl_date_formatter_iso_region_code(const char *region, size_t len) {

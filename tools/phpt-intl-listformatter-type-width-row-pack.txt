@@ -1,0 +1,7 @@
+# IntlListFormatter type/width behavior and adjacent lifecycle/error controls.
+ext/intl/tests/listformatter/listformatter_basic.phpt
+ext/intl/tests/listformatter/listformatter_with_parameters.phpt
+ext/intl/tests/listformatter/listformatter_with_parameters_error.phpt
+ext/intl/tests/listformatter/listformatter_clone.phpt
+ext/intl/tests/listformatter/listformatter_error.phpt
+ext/intl/tests/listformatter/listformatter_get_error.phpt
