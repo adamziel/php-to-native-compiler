@@ -34190,7 +34190,7 @@ fn emit_instruction(
             name,
             line,
         } => {
-            if values.class_name_fetch_uses_runtime_scope(class_name) {
+            if values.class_member_fetch_uses_runtime_scope(class_name) {
                 let scoped_class_temp = values.next_temp();
                 values.emit_runtime_scoped_member_class_name_cstr(
                     out,
@@ -34232,7 +34232,7 @@ fn emit_instruction(
             line,
         } => {
             let name_temp = values.emit_dynamic_property_name(out, name, *line);
-            if values.class_name_fetch_uses_runtime_scope(class_name) {
+            if values.class_member_fetch_uses_runtime_scope(class_name) {
                 let scoped_class_temp = values.next_temp();
                 values.emit_runtime_scoped_member_class_name_cstr(
                     out,
@@ -47512,6 +47512,13 @@ impl ValueEmitter {
                 || class_name.eq_ignore_ascii_case("parent"))
     }
 
+    fn class_member_fetch_uses_runtime_scope(&self, class_name: &str) -> bool {
+        class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static")
+            || class_name.eq_ignore_ascii_case("parent")
+            || self.class_name_fetch_uses_runtime_scope(class_name)
+    }
+
     fn static_call_target_class_name(&self, class_name: &str) -> String {
         if class_name.eq_ignore_ascii_case("parent") {
             if let Some(current_class_name) = &self.current_class_name {
@@ -55437,7 +55444,7 @@ impl ValueEmitter {
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let first_named_argument = argument_names.iter().find_map(|name| name.as_deref());
-            let class_uses_runtime_scope = self.class_name_fetch_uses_runtime_scope(class_name);
+            let class_uses_runtime_scope = self.class_member_fetch_uses_runtime_scope(class_name);
             let compile_time_class_name = if class_uses_runtime_scope {
                 None
             } else {
@@ -55476,7 +55483,7 @@ impl ValueEmitter {
             }
         }
         let result_temp = self.next_temp();
-        let class_uses_runtime_scope = self.class_name_fetch_uses_runtime_scope(class_name);
+        let class_uses_runtime_scope = self.class_member_fetch_uses_runtime_scope(class_name);
         let compile_time_class_name = if class_uses_runtime_scope {
             None
         } else {
@@ -55584,7 +55591,12 @@ impl ValueEmitter {
             let class_lookup_temp = self.next_temp();
             if class_uses_runtime_scope {
                 let scoped_class_temp = self.next_temp();
-                self.emit_runtime_scoped_class_name_cstr(out, &scoped_class_temp, class_name, line);
+                self.emit_runtime_scoped_member_class_name_cstr(
+                    out,
+                    &scoped_class_temp,
+                    class_name,
+                    line,
+                );
                 out.push_str("    const char *");
                 out.push_str(&class_lookup_temp);
                 out.push_str(" = ");
@@ -57745,7 +57757,7 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
-        if self.class_name_fetch_uses_runtime_scope(class_name) {
+        if self.class_member_fetch_uses_runtime_scope(class_name) {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -57797,7 +57809,7 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        if self.class_name_fetch_uses_runtime_scope(class_name) {
+        if self.class_member_fetch_uses_runtime_scope(class_name) {
             out.push_str(" = ptn_null();\n");
             self.emit_runtime_scoped_member_class_name_cstr(out, &result_temp, class_name, line);
             out.push_str("    if (");
@@ -58248,7 +58260,7 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
-        if self.class_name_fetch_uses_runtime_scope(class_name) {
+        if self.class_member_fetch_uses_runtime_scope(class_name) {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -58327,7 +58339,7 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-            } else if !self.class_name_fetch_uses_runtime_scope(class_name) {
+            } else if !self.class_member_fetch_uses_runtime_scope(class_name) {
                 let resolved_class_name = self.static_member_class_name(class_name);
                 if let Some(value) =
                     compact_intl_class_constant_value_expr(&resolved_class_name, name)
@@ -58422,7 +58434,7 @@ impl ValueEmitter {
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                 }
-            } else if self.class_name_fetch_uses_runtime_scope(class_name) {
+            } else if self.class_member_fetch_uses_runtime_scope(class_name) {
                 out.push_str(" = ptn_null();\n");
                 self.emit_runtime_scoped_member_class_name_cstr(
                     out,
@@ -58552,7 +58564,7 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-            } else if self.class_name_fetch_uses_runtime_scope(class_name) {
+            } else if self.class_member_fetch_uses_runtime_scope(class_name) {
                 self.emit_runtime_scoped_member_class_name_cstr(
                     out,
                     &result_temp,
@@ -64149,7 +64161,9 @@ impl ValueEmitter {
         let resolved_name = self.resolved_function_call_name(name);
         let runtime_scoped_static_call = self
             .split_static_call_name(name)
-            .is_some_and(|(class_name, _)| self.class_name_fetch_uses_runtime_scope(class_name));
+            .is_some_and(|(class_name, _)| {
+                self.class_member_fetch_uses_runtime_scope(class_name)
+            });
         if !has_named_arguments
             && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("debug_zval_dump")
@@ -64396,7 +64410,7 @@ impl ValueEmitter {
             } else if let Some((class_name, target_class_name, method_name)) =
                 self.relative_scoped_call_parts(name)
             {
-                if self.class_name_fetch_uses_runtime_scope(&class_name) {
+                if self.class_member_fetch_uses_runtime_scope(&class_name) {
                     self.emit_runtime_relative_scoped_method_call_or_function_fallback(
                         out,
                         &result_temp,
@@ -64563,7 +64577,7 @@ impl ValueEmitter {
         } else if let Some((class_name, target_class_name, method_name)) =
             self.relative_scoped_call_parts(name)
         {
-            if self.class_name_fetch_uses_runtime_scope(&class_name) {
+            if self.class_member_fetch_uses_runtime_scope(&class_name) {
                 self.emit_runtime_relative_scoped_method_call_or_function_fallback(
                     out,
                     &result_temp,

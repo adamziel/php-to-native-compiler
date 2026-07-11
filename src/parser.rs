@@ -10014,17 +10014,6 @@ impl Parser<'_> {
         let scope_span = self.advance().span;
         let member = self.advance().clone();
         let literal_member_name = name_segment_from_source_token(self.source, &member);
-        if let Some(diagnostic) =
-            self.relative_class_member_scope_diagnostic(&class_name, class_span)
-        {
-            let is_class_name_fetch = literal_member_name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("class"))
-                && !matches!(self.peek().kind, TokenKind::LeftParen);
-            if !is_class_name_fetch {
-                return Err(diagnostic);
-            }
-        }
         if let TokenKind::Variable(member_name) = member.kind {
             if matches!(self.peek().kind, TokenKind::LeftParen) {
                 let name_expr = Expr::Variable(member_name, member.span);
