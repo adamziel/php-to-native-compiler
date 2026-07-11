@@ -74,7 +74,7 @@ static PTN_UNUSED void ptn_symbols_set_len(
     }
     if (symbols->len == symbols->capacity) {
         size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
-        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        PtnSymbol *new_items = ptn_realloc_untracked_array(symbols->items, new_capacity, sizeof(PtnSymbol));
         if (new_items == NULL) {
             ptn_abort_out_of_memory();
         }
@@ -116,7 +116,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at_len(
     }
     if (symbols->len == symbols->capacity) {
         size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
-        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        PtnSymbol *new_items = ptn_realloc_untracked_array(symbols->items, new_capacity, sizeof(PtnSymbol));
         if (new_items == NULL) {
             ptn_abort_out_of_memory();
         }
@@ -193,7 +193,7 @@ static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write_len(
     }
     if (symbols->len == symbols->capacity) {
         size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
-        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        PtnSymbol *new_items = ptn_realloc_untracked_array(symbols->items, new_capacity, sizeof(PtnSymbol));
         if (new_items == NULL) {
             ptn_abort_out_of_memory();
         }

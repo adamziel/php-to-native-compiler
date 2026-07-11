@@ -1210,7 +1210,7 @@ static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray 
             new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
             ptn_abort_out_of_memory();
         }
-        PtnArray **new_arrays = realloc(root->live_arrays, new_capacity * sizeof(PtnArray *));
+        PtnArray **new_arrays = ptn_realloc_untracked_array(root->live_arrays, new_capacity, sizeof(PtnArray *));
         if (new_arrays == NULL) {
             ptn_abort_out_of_memory();
         }
@@ -1277,9 +1277,10 @@ static PTN_UNUSED void ptn_runtime_register_reference(PtnRuntime *runtime, PtnRe
             new_capacity > SIZE_MAX / sizeof(PtnReference *)) {
             ptn_abort_out_of_memory();
         }
-        PtnReference **new_references = realloc(
+        PtnReference **new_references = ptn_realloc_untracked_array(
             root->live_references,
-            new_capacity * sizeof(PtnReference *)
+            new_capacity,
+            sizeof(PtnReference *)
         );
         if (new_references == NULL) {
             ptn_abort_out_of_memory();
@@ -1500,9 +1501,10 @@ static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObjec
             new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
             ptn_abort_out_of_memory();
         }
-        PtnObject **new_objects = realloc(
+        PtnObject **new_objects = ptn_realloc_untracked_array(
             root->live_objects,
-            new_capacity * sizeof(PtnObject *)
+            new_capacity,
+            sizeof(PtnObject *)
         );
         if (new_objects == NULL) {
             ptn_abort_out_of_memory();
@@ -1553,9 +1555,10 @@ static PTN_UNUSED void ptn_runtime_register_closure(PtnRuntime *runtime, PtnClos
             new_capacity > SIZE_MAX / sizeof(PtnClosure *)) {
             ptn_abort_out_of_memory();
         }
-        PtnClosure **new_closures = realloc(
+        PtnClosure **new_closures = ptn_realloc_untracked_array(
             root->live_closures,
-            new_capacity * sizeof(PtnClosure *)
+            new_capacity,
+            sizeof(PtnClosure *)
         );
         if (new_closures == NULL) {
             ptn_abort_out_of_memory();
@@ -1596,9 +1599,10 @@ static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnV
             new_capacity > SIZE_MAX / sizeof(PtnValue)) {
             ptn_abort_out_of_memory();
         }
-        PtnValue *new_roots = realloc(
+        PtnValue *new_roots = ptn_realloc_untracked_array(
             root->temporary_roots,
-            new_capacity * sizeof(PtnValue)
+            new_capacity,
+            sizeof(PtnValue)
         );
         if (new_roots == NULL) {
             ptn_abort_out_of_memory();
@@ -1625,9 +1629,10 @@ static PTN_UNUSED void ptn_runtime_push_owned_temporary_root(
             new_capacity > SIZE_MAX / sizeof(PtnValue)) {
             ptn_abort_out_of_memory();
         }
-        PtnValue *new_roots = realloc(
+        PtnValue *new_roots = ptn_realloc_untracked_array(
             root->temporary_roots,
-            new_capacity * sizeof(PtnValue)
+            new_capacity,
+            sizeof(PtnValue)
         );
         if (new_roots == NULL) {
             ptn_abort_out_of_memory();

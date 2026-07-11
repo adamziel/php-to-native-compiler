@@ -1426,7 +1426,7 @@ static PTN_UNUSED void ptn_symbols_rebuild_index(PtnSymbolTable *symbols, size_t
         return;
     }
 
-    symbols->index_slots = calloc(capacity, sizeof(PtnSymbolIndexSlot));
+    symbols->index_slots = ptn_calloc_untracked_array(capacity, sizeof(PtnSymbolIndexSlot));
     if (symbols->index_slots == NULL) {
         ptn_abort_out_of_memory();
     }

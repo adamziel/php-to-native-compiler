@@ -436,11 +436,38 @@ static void ptn_request_free(void *pointer) {
     free(pointer);
 }
 
+static void ptn_untracked_allocation_failed(void) {
+    fputs("Out of memory\n", stderr);
+    abort();
+}
+
+static void *ptn_realloc_untracked_array(void *pointer, size_t count, size_t size) {
+    if (count != 0 && size > SIZE_MAX / count) {
+        ptn_untracked_allocation_failed();
+    }
+    size_t total = count * size;
+    void *resized = realloc(pointer, total);
+    if (resized == NULL && total != 0) {
+        ptn_untracked_allocation_failed();
+    }
+    return resized;
+}
+
+static void *ptn_calloc_untracked_array(size_t count, size_t size) {
+    if (count != 0 && size > SIZE_MAX / count) {
+        ptn_untracked_allocation_failed();
+    }
+    void *allocated = calloc(count, size);
+    if (allocated == NULL && count != 0 && size != 0) {
+        ptn_untracked_allocation_failed();
+    }
+    return allocated;
+}
+
 static char *ptn_duplicate_untracked_string_len(const char *string, size_t len) {
     char *copy = malloc(len + 1);
     if (copy == NULL) {
-        fputs("Out of memory\n", stderr);
-        abort();
+        ptn_untracked_allocation_failed();
     }
     if (len != 0) {
         memcpy(copy, string, len);
