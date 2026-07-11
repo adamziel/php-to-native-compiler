@@ -73709,6 +73709,40 @@ msgfmt_set_pattern(): Error setting symbol value at line 0, offset 26: U_PATTERN
 }
 
 #[test]
+fn compile_intl_message_formatter_datetime_values_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-message-formatter-datetime-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-message-formatter-datetime-values.php");
+    let output = root.join("intl-message-formatter-datetime-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$mf = new MessageFormatter('en_US', '{0,date} {0,time}');\n\
+$dt = new DateTime('2012-05-06 18:00:42', new DateTimeZone('Europe/Lisbon'));\n\
+$dti = new DateTimeImmutable('2012-05-06 18:00:42', new DateTimeZone('Europe/Lisbon'));\n\
+echo $mf->format([$dt]), \"\\n\";\n\
+echo $mf->format([$dti]), \"\\n\";\n\
+$ms = new MessageFormatter('en_US', \"On {0,time,yyyy-MM-dd G 'at' HH:mm:ss.SSS zzz} something odd happened\");\n\
+echo $ms->format([1336310569.123]), \"\\n\";\n\
+var_dump($ms->parse('On 2012-05-06 AD at 15:22:49.123 GMT+02:00 something odd happened'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "May 6, 2012 5:00:42\u{202f}PM\n\
+May 6, 2012 5:00:42\u{202f}PM\n\
+On 2012-05-06 AD at 13:22:49.123 GMT something odd happened\n\
+array(1) {\n  [0]=>\n  float(1336310569.123)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_formatter_clone_pattern_and_error_state_to_native_binary() {
     let root = temp_dir("ptn-native-intl-formatter-clone-error-state");
     fs::create_dir_all(&root).unwrap();

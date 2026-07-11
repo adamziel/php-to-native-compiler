@@ -86851,6 +86851,7 @@ static int ptn_timezone_parse_gmt_offset_literal(const char *name, int *offset_o
 static int ptn_timezone_parse_etc_gmt_literal(const char *name, int *offset_out);
 static time_t ptn_datetime_utc_timestamp_for_parts(int64_t year, int month, int day, int hour, int minute, int second);
 static PtnValue ptn_datetime_create_object(PtnRuntime *runtime, const char *class_name, time_t timestamp, int microsecond, const char *timezone, size_t line);
+static PtnDateTimeData *ptn_datetime_data_from_value(PtnValue value);
 static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, PtnValue right, int absolute, size_t line);
 static PtnValue ptn_datetime_zone_create_from_name(PtnRuntime *runtime, const char *class_name, const char *name, size_t line);
 static const char *ptn_runtime_intl_default_locale(PtnRuntime *runtime);
@@ -91201,7 +91202,8 @@ static int ptn_intl_message_value_can_be_date_time(PtnValue value) {
         value.type == PTN_BOOL ||
         value.type == PTN_INT ||
         value.type == PTN_FLOAT ||
-        value.type == PTN_STRING;
+        value.type == PTN_STRING ||
+        ptn_datetime_data_from_value(value) != NULL;
 }
 
 static char *ptn_intl_message_trim_token(char *token) {
@@ -91384,6 +91386,14 @@ static double ptn_intl_message_numeric_value(PtnValue value) {
         return end == start ? 0.0 : parsed;
     }
     return ptn_value_to_double(value);
+}
+
+static double ptn_intl_message_date_time_numeric_value(PtnValue value) {
+    PtnDateTimeData *datetime = ptn_datetime_data_from_value(value);
+    if (datetime != NULL) {
+        return (double)datetime->timestamp + ((double)datetime->microsecond / 1000000.0);
+    }
+    return ptn_intl_message_numeric_value(value);
 }
 
 static void ptn_intl_message_append_string_value(PtnStringBuffer *output, PtnValue value) {
@@ -91885,8 +91895,8 @@ static void ptn_intl_message_append_placeholder(
         free(placeholder);
         return;
     }
-    double number = ptn_intl_message_numeric_value(value);
     if (ptn_ascii_case_equal(type, "number")) {
+        double number = ptn_intl_message_numeric_value(value);
         if (style != NULL && ptn_ascii_case_equal(style, "integer")) {
             ptn_intl_message_append_number(output, floor(number), 0, locale);
         } else if (style != NULL && ptn_ascii_case_equal(style, "currency")) {
@@ -91926,12 +91936,16 @@ static void ptn_intl_message_append_placeholder(
             );
         }
     } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
+        double number = ptn_intl_message_date_time_numeric_value(value);
         ptn_intl_message_append_date_or_time(output, number, type, style);
     } else if (ptn_ascii_case_equal(type, "spellout")) {
+        double number = ptn_intl_message_numeric_value(value);
         ptn_intl_message_append_spellout(output, number);
     } else if (ptn_ascii_case_equal(type, "ordinal")) {
+        double number = ptn_intl_message_numeric_value(value);
         ptn_intl_message_append_ordinal(output, number);
     } else if (ptn_ascii_case_equal(type, "duration")) {
+        double number = ptn_intl_message_numeric_value(value);
         ptn_intl_message_append_duration(output, number);
     } else if (has_hash && ptn_ascii_case_equal(type, "#")) {
         ptn_intl_message_append_number_trimmed(output, hash_number, fabs(hash_number - floor(hash_number)) > 0.000001 ? 3 : 0, locale);
@@ -92138,6 +92152,66 @@ static int ptn_intl_message_parse_numeric_segment(
     return 1;
 }
 
+static int ptn_intl_message_parse_datetime_segment(const char *segment, size_t segment_len, PtnValue *value_out) {
+    char *copy = ptn_duplicate_string_len(segment, segment_len);
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    int millisecond = 0;
+    char sign = '+';
+    int offset_hour = 0;
+    int offset_minute = 0;
+    int consumed = 0;
+    int matched = sscanf(
+        copy,
+        "%d-%d-%d AD at %d:%d:%d.%d GMT%c%d:%d%n",
+        &year,
+        &month,
+        &day,
+        &hour,
+        &minute,
+        &second,
+        &millisecond,
+        &sign,
+        &offset_hour,
+        &offset_minute,
+        &consumed
+    );
+    if (!(matched == 10 && copy[consumed] == '\0' && (sign == '+' || sign == '-'))) {
+        sign = '+';
+        offset_hour = 0;
+        offset_minute = 0;
+        consumed = 0;
+        matched = sscanf(
+            copy,
+            "%d-%d-%d AD at %d:%d:%d.%d GMT%n",
+            &year,
+            &month,
+            &day,
+            &hour,
+            &minute,
+            &second,
+            &millisecond,
+            &consumed
+        );
+        if (!(matched == 7 && copy[consumed] == '\0')) {
+            free(copy);
+            return 0;
+        }
+    }
+    free(copy);
+    int offset = (offset_hour * 3600) + (offset_minute * 60);
+    if (sign == '-') {
+        offset = -offset;
+    }
+    time_t wall = ptn_datetime_utc_timestamp_for_parts(year, month, day, hour, minute, second);
+    *value_out = ptn_float((double)(wall - offset) + ((double)millisecond / 1000.0));
+    return 1;
+}
+
 static int ptn_intl_message_array_key_from_name(const char *name, PtnArrayKey *key_out) {
     char *end = NULL;
     long long integer = strtoll(name, &end, 10);
@@ -92222,12 +92296,28 @@ static PtnValue ptn_intl_message_parse_by_pattern(
         PtnValue parsed = ptn_null();
         int integer_style = style != NULL && ptn_ascii_case_equal(style, "integer");
         int is_number = type == NULL || *type == '\0' || ptn_ascii_case_equal(type, "number");
+        int is_datetime = type != NULL &&
+            (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) &&
+            style != NULL &&
+            strstr(style, "yyyy-MM-dd") != NULL;
         if (is_number) {
             if (!ptn_intl_message_parse_numeric_segment(
                 input_data + input_offset,
                 (size_t)(segment_end - (input_data + input_offset)),
                 locale,
                 integer_style,
+                &parsed
+            )) {
+                free(name);
+                free(type);
+                free(style);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+        } else if (is_datetime) {
+            if (!ptn_intl_message_parse_datetime_segment(
+                input_data + input_offset,
+                (size_t)(segment_end - (input_data + input_offset)),
                 &parsed
             )) {
                 free(name);
