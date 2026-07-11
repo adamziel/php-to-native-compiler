@@ -74316,7 +74316,34 @@ foreach (['.##', '.#'] as $precision) {\n\
     var_dump($formatter->format(5.1, 5.2));\n\
     var_dump($formatter->format(5.01, 5.02));\n\
     var_dump($formatter->format(5.001, 5.002));\n\
-}\n",
+}\n\
+\n\
+$en = IntlNumberRangeFormatter::createFromSkeleton(\n\
+    'measure-unit/length-meter',\n\
+    'en_US',\n\
+    IntlNumberRangeFormatter::COLLAPSE_NONE,\n\
+    IntlNumberRangeFormatter::IDENTITY_FALLBACK_RANGE\n\
+);\n\
+var_dump($en->format(1.1, 2.2));\n\
+var_dump($en->format(-5, 5));\n\
+\n\
+$ro = IntlNumberRangeFormatter::createFromSkeleton(\n\
+    'measure-unit/length-meter',\n\
+    'RO',\n\
+    IntlNumberRangeFormatter::COLLAPSE_AUTO,\n\
+    IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY\n\
+);\n\
+var_dump($ro->format(1.1, 2.2));\n\
+var_dump($ro->format(5.0001, 5.0001));\n\
+\n\
+$ja = IntlNumberRangeFormatter::createFromSkeleton(\n\
+    'measure-unit/length-meter',\n\
+    'JA',\n\
+    IntlNumberRangeFormatter::COLLAPSE_AUTO,\n\
+    IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY\n\
+);\n\
+var_dump($ja->format(-5, 5));\n\
+var_dump($ja->format(5, 5));\n",
     )
     .unwrap();
 
@@ -74338,7 +74365,13 @@ foreach (['.##', '.#'] as $precision) {\n\
             "Approximate with .#\n",
             "string(9) \"5.1\u{2013}5.2\"\n",
             "string(2) \"~5\"\n",
-            "string(2) \"~5\"\n"
+            "string(2) \"~5\"\n",
+            "string(15) \"1.1 m \u{2013} 2.2 m\"\n",
+            "string(12) \"-5 m \u{2013} 5 m\"\n",
+            "string(11) \"1,1 - 2,2 m\"\n",
+            "string(9) \"~5,0001 m\"\n",
+            "string(10) \"-5 \u{ff5e} 5 m\"\n",
+            "string(6) \"\u{7d04}5 m\"\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

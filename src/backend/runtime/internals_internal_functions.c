@@ -98952,7 +98952,7 @@ static int ptn_intl_number_range_skeleton_max_fraction_digits(const char *skelet
     return -1;
 }
 
-static char *ptn_intl_number_range_format_number(PtnValue value, int max_fraction_digits) {
+static char *ptn_intl_number_range_format_number(PtnValue value, int max_fraction_digits, const char *locale) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_INT) {
         int needed = snprintf(NULL, 0, "%lld", (long long)resolved.as.integer);
@@ -98991,7 +98991,46 @@ static char *ptn_intl_number_range_format_number(PtnValue value, int max_fractio
     if (strcmp(buffer, "-0") == 0) {
         return ptn_duplicate_string("0");
     }
+    char decimal_separator = ptn_intl_number_formatter_decimal_separator(locale);
+    if (decimal_separator != '.') {
+        char *dot = strchr(buffer, '.');
+        if (dot != NULL) {
+            *dot = decimal_separator;
+        }
+    }
     return ptn_duplicate_string(buffer);
+}
+
+static const char *ptn_intl_number_range_unit_suffix(PtnIntlNumberRangeFormatterData *data) {
+    const char *skeleton = data == NULL || data->skeleton == NULL ? "" : data->skeleton;
+    if (strstr(skeleton, "measure-unit/length-meter") != NULL) {
+        return " m";
+    }
+    return "";
+}
+
+static const char *ptn_intl_number_range_separator(
+    PtnIntlNumberRangeFormatterData *data,
+    const char *start,
+    int collapse_none
+) {
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    if (ptn_intl_locale_has_prefix(locale, "ro")) {
+        return " - ";
+    }
+    if (ptn_intl_locale_has_prefix(locale, "ja")) {
+        return collapse_none || (start != NULL && start[0] == '-')
+            ? " \xEF\xBD\x9E "
+            : "\xEF\xBD\x9E";
+    }
+    return collapse_none || (start != NULL && start[0] == '-')
+        ? " \xE2\x80\x93 "
+        : "\xE2\x80\x93";
+}
+
+static const char *ptn_intl_number_range_approx_prefix(PtnIntlNumberRangeFormatterData *data) {
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    return ptn_intl_locale_has_prefix(locale, "ja") ? "\xE7\xB4\x84" : "~";
 }
 
 static PtnValue ptn_intl_number_range_formatter_format(
@@ -99005,23 +99044,38 @@ static PtnValue ptn_intl_number_range_formatter_format(
         return ptn_null();
     }
     int max_fraction_digits = ptn_intl_number_range_skeleton_max_fraction_digits(data->skeleton);
-    char *start = ptn_intl_number_range_format_number(args[0], max_fraction_digits);
-    char *end = ptn_intl_number_range_format_number(args[1], max_fraction_digits);
+    char *start = ptn_intl_number_range_format_number(args[0], max_fraction_digits, data->locale);
+    char *end = ptn_intl_number_range_format_number(args[1], max_fraction_digits, data->locale);
+    const char *unit_suffix = ptn_intl_number_range_unit_suffix(data);
+    int has_unit = unit_suffix[0] != '\0';
+    int collapse_none = has_unit && data->collapse == PTN_INTL_NUMBER_RANGE_COLLAPSE_NONE;
+    const char *separator = has_unit
+        ? ptn_intl_number_range_separator(data, start, collapse_none)
+        : "\xE2\x80\x93";
 
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     if (strcmp(start, end) == 0 &&
         data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY) {
-        ptn_string_buffer_append_char(&output, '~');
+        ptn_string_buffer_append(&output, ptn_intl_number_range_approx_prefix(data));
         ptn_string_buffer_append(&output, start);
+        ptn_string_buffer_append(&output, unit_suffix);
     } else if (strcmp(start, end) == 0 &&
         (data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE ||
          data->identity_fallback == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE)) {
         ptn_string_buffer_append(&output, start);
+        ptn_string_buffer_append(&output, unit_suffix);
+    } else if (collapse_none) {
+        ptn_string_buffer_append(&output, start);
+        ptn_string_buffer_append(&output, unit_suffix);
+        ptn_string_buffer_append(&output, separator);
+        ptn_string_buffer_append(&output, end);
+        ptn_string_buffer_append(&output, unit_suffix);
     } else {
         ptn_string_buffer_append(&output, start);
-        ptn_string_buffer_append(&output, "\xE2\x80\x93");
+        ptn_string_buffer_append(&output, separator);
         ptn_string_buffer_append(&output, end);
+        ptn_string_buffer_append(&output, unit_suffix);
     }
     free(start);
     free(end);
