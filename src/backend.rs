@@ -6111,7 +6111,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\NamedNodeMap\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMTokenList\") ||\n");

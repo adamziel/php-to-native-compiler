@@ -176707,6 +176707,9 @@ static int ptn_xml_check_document_element_insertion_sequence(
     if (parent == NULL || parent->type != PTN_XML_NODE_DOCUMENT) {
         return 1;
     }
+    if (!parent->modern_dom) {
+        return 1;
+    }
     size_t element_count = clear_existing ? 0 : ptn_xml_document_element_count_excluding(parent, excluded_child);
     for (size_t i = 0; i < argc; i++) {
         PtnXmlNode *node = ptn_xml_node_data(args[i]);
@@ -191436,6 +191439,25 @@ static PtnValue ptn_dom_compare_document_position_method(
                 ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
                 : PTN_DOM_DOCUMENT_POSITION_PRECEDING;
             return ptn_int(direction | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+        }
+    }
+    if (node->type == PTN_XML_NODE_ATTRIBUTE && node->parent != NULL &&
+        other != node->parent && ptn_xml_node_is_ancestor(node->parent, other)) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_FOLLOWING);
+    }
+    if (other->type == PTN_XML_NODE_ATTRIBUTE && other->parent != NULL &&
+        node != other->parent && ptn_xml_node_is_ancestor(other->parent, node)) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_PRECEDING);
+    }
+    PtnXmlNode *node_order = node->type == PTN_XML_NODE_ATTRIBUTE ? node->parent : node;
+    PtnXmlNode *other_order = other->type == PTN_XML_NODE_ATTRIBUTE ? other->parent : other;
+    if ((node_order != node || other_order != other) &&
+        node_order != NULL && other_order != NULL && node_order != other_order) {
+        int node_order_precedes_other = 0;
+        if (ptn_xml_node_precedes_in_document_order(node_order, other_order, &node_order_precedes_other)) {
+            return ptn_int(node_order_precedes_other
+                ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
+                : PTN_DOM_DOCUMENT_POSITION_PRECEDING);
         }
     }
     if (ptn_xml_node_is_ancestor(node, other)) {

@@ -78896,6 +78896,69 @@ var_dump($text1->nextSibling, $text2->previousSibling);
 }
 
 #[test]
+fn compile_legacy_dom_document_direct_root_sibling_order_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-direct-root-sibling-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-direct-root-sibling-order.php");
+    let output = root.join("dom-direct-root-sibling-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = new DOMDocument();
+$foo = $dom->appendChild($dom->createElement("foo"));
+$bar = $dom->appendChild($dom->createElement("bar"));
+var_dump($foo->compareDocumentPosition($bar) === DOMNode::DOCUMENT_POSITION_FOLLOWING);
+var_dump($bar->compareDocumentPosition($foo) === DOMNode::DOCUMENT_POSITION_PRECEDING);
+
+$attrDoc = new DOMDocument();
+$attrDoc->loadXML('<container><before/><outer align="center"><p>foo</p><div><div><p>bar</p></div></div></outer></container>');
+$before = $attrDoc->documentElement->firstElementChild;
+$outer = $before->nextElementSibling;
+$foo = $outer->firstElementChild;
+$bar = $foo->nextElementSibling->firstElementChild->firstElementChild;
+$attr = $outer->attributes[0];
+var_dump($attr->compareDocumentPosition($before) === DOMNode::DOCUMENT_POSITION_PRECEDING);
+var_dump($attr->compareDocumentPosition($foo) === DOMNode::DOCUMENT_POSITION_FOLLOWING);
+var_dump($bar->compareDocumentPosition($attr) === DOMNode::DOCUMENT_POSITION_PRECEDING);
+
+$attrDoc->loadXML('<outer><inner a="b" c="d" e="f" /><inner a="b" x="y" /></outer>');
+$attrs1 = $attrDoc->documentElement->firstElementChild->attributes;
+$attrs2 = $attrDoc->documentElement->firstElementChild->nextElementSibling->attributes;
+$matched = 0;
+foreach ($attrs1 as $attr1) {
+    foreach ($attrs2 as $attr2) {
+        if ($attr1->compareDocumentPosition($attr2) === DOMNode::DOCUMENT_POSITION_FOLLOWING
+            && $attr2->compareDocumentPosition($attr1) === DOMNode::DOCUMENT_POSITION_PRECEDING) {
+            $matched++;
+        }
+    }
+}
+var_dump($matched);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_check_document_element_insertion_sequence"));
+}
+
+#[test]
 fn compile_dom_current_red_node_metadata_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-current-red-node-metadata-pack");
     fs::create_dir_all(&root).unwrap();
