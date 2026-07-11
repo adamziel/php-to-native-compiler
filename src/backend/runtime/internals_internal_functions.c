@@ -246781,6 +246781,14 @@ static PtnValue ptn_soap_wsdl_operation_call(
     int *handled_out
 );
 
+static PtnValue ptn_soap_client_finish_non_wsdl_request(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSoapClientData *data,
+    const char *method_name,
+    size_t line
+);
+
 static PtnValue ptn_soap_set_soap_headers(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -246906,7 +246914,7 @@ static PtnValue ptn_soap_soap_call(
         ptn_value_destroy(&result);
         return ptn_null();
     }
-    (void)ptn_soap_client_record_non_wsdl_request(
+    int recorded = ptn_soap_client_record_non_wsdl_request(
         runtime,
         receiver,
         method_name,
@@ -246914,11 +246922,23 @@ static PtnValue ptn_soap_soap_call(
         input_headers,
         line
     );
+    PtnSoapClientData *non_wsdl_data = ptn_soap_client_data(receiver);
     if (argc < 2) {
         ptn_value_destroy(&method_args);
     }
+    if (runtime->exceptions->active_exception != NULL || !recorded) {
+        free(method_name);
+        return ptn_null();
+    }
+    PtnValue result = ptn_soap_client_finish_non_wsdl_request(
+        runtime,
+        receiver,
+        non_wsdl_data,
+        method_name,
+        line
+    );
     free(method_name);
-    return ptn_null();
+    return result;
 }
 
 static PtnValue ptn_soap_get_last_request(
@@ -247454,43 +247474,54 @@ static PtnValue ptn_soap_wsdl_operation_call(
     return decoded;
 }
 
-static PtnValue ptn_soap_non_wsdl_operation_call(
+static int ptn_soap_client_exceptions_enabled(PtnSoapClientData *data) {
+    return data == NULL || !ptn_soap_option_is_false_or_zero(data->options, "exceptions");
+}
+
+static PtnValue ptn_soap_client_fault_result(
+    PtnRuntime *runtime,
+    PtnSoapClientData *data,
+    const char *code,
+    const char *message,
+    size_t line
+) {
+    PtnValue code_value = ptn_owned_string(ptn_duplicate_string(code == NULL ? "Client" : code));
+    PtnValue message_value = ptn_owned_string(
+        ptn_duplicate_string(message == NULL ? "Unknown Error" : message)
+    );
+    PtnValue fault_args[2] = {
+        ptn_value_share(code_value),
+        ptn_value_share(message_value)
+    };
+    PtnValue fault = ptn_new_object(runtime, "SoapFault", 2, fault_args, line);
+    ptn_value_destroy(&fault_args[0]);
+    ptn_value_destroy(&fault_args[1]);
+    ptn_value_destroy(&code_value);
+    ptn_value_destroy(&message_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&fault);
+        return ptn_null();
+    }
+    if (!ptn_soap_client_exceptions_enabled(data)) {
+        return fault;
+    }
+    PtnValue thrown = ptn_throw_value(runtime, fault, runtime->source_path, line);
+    ptn_value_destroy(&fault);
+    return thrown;
+}
+
+static PtnValue ptn_soap_client_finish_non_wsdl_request(
     PtnRuntime *runtime,
     PtnValue receiver,
+    PtnSoapClientData *data,
     const char *method_name,
-    size_t argc,
-    const PtnValue *args,
-    size_t line,
-    int *handled_out
+    size_t line
 ) {
-    *handled_out = 0;
-    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
-    if (data == NULL || data->wsdl_path != NULL) {
+    if (data == NULL) {
         return ptn_null();
     }
-    PtnValue method_args = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i < argc; i++) {
-        ptn_array_set_entry(
-            method_args.as.array,
-            ptn_array_int_key((int64_t)i),
-            ptn_value_clone_deref(args[i])
-        );
-    }
-    (void)ptn_soap_client_record_non_wsdl_request(
-        runtime,
-        receiver,
-        method_name,
-        method_args,
-        ptn_null(),
-        line
-    );
-    ptn_value_destroy(&method_args);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    *handled_out = 1;
     if (!ptn_soap_client_has_user_do_request(receiver)) {
-        return ptn_null();
+        return ptn_soap_client_fault_result(runtime, data, "Client", "Unknown Error", line);
     }
 
     PtnValue request_value = ptn_owned_string_len(
@@ -247536,6 +247567,44 @@ static PtnValue ptn_soap_non_wsdl_operation_call(
     PtnValue decoded = ptn_soap_decode_response_xml(runtime, data, method_name, result, 0, line);
     ptn_value_destroy(&result);
     return decoded;
+}
+
+static PtnValue ptn_soap_non_wsdl_operation_call(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int *handled_out
+) {
+    *handled_out = 0;
+    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
+    if (data == NULL || data->wsdl_path != NULL) {
+        return ptn_null();
+    }
+    PtnValue method_args = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_array_set_entry(
+            method_args.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone_deref(args[i])
+        );
+    }
+    (void)ptn_soap_client_record_non_wsdl_request(
+        runtime,
+        receiver,
+        method_name,
+        method_args,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&method_args);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    *handled_out = 1;
+    return ptn_soap_client_finish_non_wsdl_request(runtime, receiver, data, method_name, line);
 }
 
 static PTN_UNUSED PtnValue ptn_soap_call_method(

@@ -88433,6 +88433,59 @@ $client->echoStringArray($array);
 }
 
 #[test]
+fn compile_soap_non_wsdl_transport_fault_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-non-wsdl-transport-fault");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-non-wsdl-transport-fault.php");
+    let output = root.join("soap-non-wsdl-transport-fault-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$namespace = "http://example.com/ns";
+$soapvar = new SoapVar(
+    [new SoapVar('value', XSD_STRING, null, null, null, $namespace)],
+    SOAP_ENC_OBJECT,
+    null,
+    null,
+    'name',
+    $namespace
+);
+
+$throwing = new SoapClient(null, ['exceptions' => 1, 'location' => '', 'uri' => $namespace]);
+try {
+    $throwing->__soapCall('method', [$soapvar]);
+    echo "no throw\n";
+} catch (Exception $e) {
+    echo get_class($e), "\n";
+    echo $e->faultstring, "\n";
+}
+
+$returning = new SoapClient(null, ['exceptions' => 0, 'location' => '', 'uri' => $namespace]);
+$fault = $returning->__soapCall('method', [$soapvar]);
+var_dump($fault instanceof SoapFault);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout, "SoapFault\nUnknown Error\nbool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_finish_non_wsdl_request"));
+    assert!(c_source.contains("ptn_soap_client_fault_result"));
+}
+
+#[test]
 fn compile_soap_typemap_to_xml_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-typemap-to-xml-response");
     fs::create_dir_all(&root).unwrap();
