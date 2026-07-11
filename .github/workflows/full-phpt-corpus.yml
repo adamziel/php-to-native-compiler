@@ -10,15 +10,19 @@ on:
       timeout_seconds:
         description: Per-PHPT timeout passed to run-tests.php
         required: true
-        default: "300"
+        default: "120"
       run_tests_jobs:
-        description: Parallel run-tests.php workers per shard
+        description: Isolated PHPT worker processes per shard
         required: true
-        default: "8"
+        default: "4"
+      batch_size:
+        description: PHPT rows per run-tests.php batch before crash fallback
+        required: true
+        default: "24"
       shard_count:
         description: Number of full-corpus shards to split the run into
         required: true
-        default: "480"
+        default: "30"
 
 permissions:
   contents: read
@@ -57,28 +61,15 @@ jobs:
           print("second_shards=" + json.dumps(list(range(split, count))))
           PY
 
-  full-phpt-shard-a:
-    name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
-    needs: [plan-full-phpt-shards]
+  build-phpc:
+    name: build phpc
     runs-on: ubuntu-latest
-    timeout-minutes: 2880
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.first_shards) }}
 
     steps:
       - name: Checkout compiler
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Checkout PHPT corpus
-        uses: actions/checkout@v4
-        with:
-          repository: php/php-src
-          ref: ${{ inputs.php_src_ref }}
-          path: .runtime/php-src-phpt
+          ref: ${{ github.sha }}
 
       - name: Install host packages
         run: |
@@ -99,6 +90,53 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Build compiler
+        run: cargo build --locked --release --bin phpc
+
+      - name: Upload compiler artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpc-bin
+          if-no-files-found: error
+          path: target/release/phpc
+
+  full-phpt-shard-a:
+    name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
+    needs: [plan-full-phpt-shards, build-phpc]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2880
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan-full-phpt-shards.outputs.first_shards) }}
+
+    steps:
+      - name: Checkout compiler
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Checkout PHPT corpus
+        uses: actions/checkout@v4
+        with:
+          repository: php/php-src
+          ref: ${{ inputs.php_src_ref }}
+          path: .runtime/php-src-phpt
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld pkg-config php-cli
+
+      - name: Download compiler artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: phpc-bin
+          path: .runtime/phpc-bin
+
+      - name: Prepare compiler artifact
+        run: chmod +x .runtime/phpc-bin/phpc
+
       - name: Generate full-corpus shard
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
@@ -113,10 +151,12 @@ jobs:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
-          PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_ISOLATED_WORKERS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_BATCH_SIZE: ${{ inputs.batch_size }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
+          PHPC_BIN: ${{ github.workspace }}/.runtime/phpc-bin/phpc
         run: |
           set +e
           python3 <<'PY'
@@ -133,10 +173,24 @@ jobs:
           progress_dir = pathlib.Path(os.environ["PHPT_PROGRESS_DIR"])
           progress_dir.mkdir(parents=True, exist_ok=True)
           shard_manifest = f".runtime/full-phpt-shards/shard-{shard}.txt"
+          worker_count = os.environ["PTN_PHPT_ISOLATED_WORKERS"]
+          batch_size = os.environ["PTN_PHPT_BATCH_SIZE"]
+          test_timeout = os.environ["PTN_PHPT_TEST_TIMEOUT"]
+          phpc_bin = os.environ["PHPC_BIN"]
           timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
           command = [
-              "tools/run-bounded-phpt.sh",
-              "--classify-harness-programs",
+              "python3",
+              "tools/run-phpt-isolated-manifest.py",
+              "--timeout",
+              test_timeout,
+              "--workers",
+              worker_count,
+              "--batch-size",
+              batch_size,
+              "--phpc-bin",
+              phpc_bin,
+              "--out-dir",
+              str(progress_dir),
               shard_manifest,
           ]
 
@@ -233,7 +287,7 @@ jobs:
 
   full-phpt-shard-b:
     name: shard ${{ matrix.shard }}/${{ inputs.shard_count }}
-    needs: [plan-full-phpt-shards]
+    needs: [plan-full-phpt-shards, build-phpc]
     runs-on: ubuntu-latest
     timeout-minutes: 2880
     strategy:
@@ -245,7 +299,7 @@ jobs:
       - name: Checkout compiler
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.sha }}
 
       - name: Checkout PHPT corpus
         uses: actions/checkout@v4
@@ -259,19 +313,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang lld pkg-config php-cli
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo build output
-        uses: actions/cache@v4
+      - name: Download compiler artifact
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          name: phpc-bin
+          path: .runtime/phpc-bin
+
+      - name: Prepare compiler artifact
+        run: chmod +x .runtime/phpc-bin/phpc
 
       - name: Generate full-corpus shard
         env:
@@ -287,10 +336,12 @@ jobs:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
           PHPT_PROGRESS_DIR: ${{ github.workspace }}/.runtime/full-phpt-results/shard-${{ matrix.shard }}
           PTN_PHPT_TEST_TIMEOUT: ${{ inputs.timeout_seconds }}
-          PTN_PHPT_RUN_TESTS_JOBS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_ISOLATED_WORKERS: ${{ inputs.run_tests_jobs }}
+          PTN_PHPT_BATCH_SIZE: ${{ inputs.batch_size }}
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: "120"
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
+          PHPC_BIN: ${{ github.workspace }}/.runtime/phpc-bin/phpc
         run: |
           set +e
           python3 <<'PY'
@@ -307,10 +358,24 @@ jobs:
           progress_dir = pathlib.Path(os.environ["PHPT_PROGRESS_DIR"])
           progress_dir.mkdir(parents=True, exist_ok=True)
           shard_manifest = f".runtime/full-phpt-shards/shard-{shard}.txt"
+          worker_count = os.environ["PTN_PHPT_ISOLATED_WORKERS"]
+          batch_size = os.environ["PTN_PHPT_BATCH_SIZE"]
+          test_timeout = os.environ["PTN_PHPT_TEST_TIMEOUT"]
+          phpc_bin = os.environ["PHPC_BIN"]
           timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
           command = [
-              "tools/run-bounded-phpt.sh",
-              "--classify-harness-programs",
+              "python3",
+              "tools/run-phpt-isolated-manifest.py",
+              "--timeout",
+              test_timeout,
+              "--workers",
+              worker_count,
+              "--batch-size",
+              batch_size,
+              "--phpc-bin",
+              phpc_bin,
+              "--out-dir",
+              str(progress_dir),
               shard_manifest,
           ]
 
