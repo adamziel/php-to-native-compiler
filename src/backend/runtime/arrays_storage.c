@@ -5561,8 +5561,11 @@ static int ptn_generator_should_defer_zero_ref_release(PtnRuntime *runtime, PtnG
     PtnObject *active_fiber = active_executor == NULL
         ? root->current_fiber
         : active_executor->current_fiber;
-    return active_fiber != NULL ||
-        (root->gc_enabled && ptn_generator_has_generator_delegate_source(generator));
+    /* PORT NOTE: php-src only defers this destructor path for a generator
+     * chain owned by a running fiber. Plain zero-ref release must force-close
+     * yield-from delegates immediately so finally blocks run before later user
+     * code. */
+    return active_fiber != NULL;
 }
 
 struct PtnReleaseState {
