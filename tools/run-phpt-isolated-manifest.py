@@ -32,6 +32,8 @@ COUNT_RE = {
     "passed": re.compile(r"^\s*Tests passed\s*:\s*(\d+)\b", re.MULTILINE),
 }
 
+PROCESS_TIMEOUT_GRACE_SECONDS = 60
+
 
 @dataclasses.dataclass(frozen=True)
 class Row:
@@ -169,6 +171,10 @@ def classify_result(
     return "unknown"
 
 
+def batch_process_timeout(test_timeout: int, row_count: int) -> int:
+    return test_timeout * row_count + PROCESS_TIMEOUT_GRACE_SECONDS
+
+
 def run_batch_once(rows: list[Row], php_src: Path, phpc_bin: Path, timeout: int) -> Result:
     env = os.environ.copy()
     env["PHPC_BIN"] = str(phpc_bin)
@@ -198,7 +204,9 @@ def run_batch_once(rows: list[Row], php_src: Path, phpc_bin: Path, timeout: int)
             start_new_session=True,
         )
         try:
-            raw_output, _ = process.communicate(timeout=timeout + 60)
+            raw_output, _ = process.communicate(
+                timeout=batch_process_timeout(timeout, len(rows))
+            )
         except subprocess.TimeoutExpired:
             timed_out = True
             os.killpg(process.pid, signal.SIGTERM)
