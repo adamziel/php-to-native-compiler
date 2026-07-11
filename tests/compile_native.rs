@@ -610,7 +610,7 @@ fn compile_empty_iterator_surface_to_native_binary() {
     let output = root.join("empty-iterator-surface-bin");
     fs::write(
         &input,
-        r##"<?php
+        r#"<?php
 function make_iterator(): Iterator {
     return new EmptyIterator();
 }
@@ -83261,7 +83261,7 @@ fn compile_soap_wsdl_anyxml_struct_fields_to_native_binary() {
     .unwrap();
     fs::write(
         &input,
-        r##"<?php
+        r#"<?php
 class LocalSoapClient extends SoapClient {
     function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
         echo $request;
