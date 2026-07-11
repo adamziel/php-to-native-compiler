@@ -66173,6 +66173,18 @@ static void ptn_file_array_append_line(
     (*index)++;
 }
 
+static int ptn_try_read_php_filter_url_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    int use_include_path,
+    PtnResource *context,
+    const char *function_name,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **detail_out,
+    size_t line
+);
+
 static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
         runtime,
@@ -66207,11 +66219,33 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
+    char *data_url_detail = NULL;
     const char *zlib_path = NULL;
-    int read_result = ptn_zlib_uri_path(path, &zlib_path)
+    int php_filter_result = ptn_try_read_php_filter_url_bytes(
+        runtime,
+        path,
+        use_include_path,
+        NULL,
+        "file",
+        &data,
+        &data_len,
+        &data_url_detail,
+        line
+    );
+    int read_result = php_filter_result != 0
+        ? php_filter_result
+        : ptn_zlib_uri_path(path, &zlib_path)
         ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
         : ptn_read_file_bytes_with_search(runtime, "file", path, use_include_path, &data, &data_len, &opened_path, line);
     if (read_result <= 0) {
+        if (data_url_detail != NULL) {
+            ptn_emit_file_warning(runtime, "file", path, data_url_detail, line);
+            free(data_url_detail);
+            free(opened_path);
+            free(path);
+            free(data);
+            return ptn_bool(0);
+        }
         char detail[192];
         int needed = snprintf(
             detail,
@@ -66229,6 +66263,7 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
         free(data);
         return ptn_bool(0);
     }
+    free(data_url_detail);
     free(opened_path);
     free(path);
 
