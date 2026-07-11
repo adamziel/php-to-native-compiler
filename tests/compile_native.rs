@@ -1163,6 +1163,8 @@ echo bin2hex(jdtojewish(jewishtojd(1, 1, 5000), true)), \"\\n\";\n\
 echo bin2hex(jdtojewish(jewishtojd(6, 1, 5000), true)), \"\\n\";\n\
 echo bin2hex(jdtojewish(jewishtojd(6, 1, 5001), true)), \"\\n\";\n\
 echo bin2hex(jdtojewish(gregoriantojd(10, 28, 2002), true, CAL_JEWISH_ADD_GERESHAYIM)), \"\\n\";\n\
+echo jewishtojd(-1, -1, -1), \"\\n\";\n\
+echo jewishtojd(10, 6, 2147483647), \"\\n\";\n\
 try { jewishtojd(10, 6, PHP_INT_MIN); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { cal_days_in_month(CAL_GREGORIAN, 12, PHP_INT_MAX); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { cal_to_jd(CAL_GREGORIAN, 1, PHP_INT_MAX, 1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
@@ -1186,7 +1188,9 @@ try { jdtojewish(gregoriantojd(1, 1, 9998), true); } catch (ValueError $e) { ech
 e020e0e3f820e02720e4\n\
 e020e0e3f820e4e0\n\
 eb22e120e7f9e5ef20e4faf9f122e2\n\
-jewishtojd(): Argument #3 ($year) must be between 1 and 2147483646\n\
+0\n\
+0\n\
+jewishtojd(): Argument #3 ($year) must be between -2147483648 and 2147483647\n\
 cal_days_in_month(): Argument #3 ($year) must be less than 2147483646\n\
 cal_to_jd(): Argument #3 ($day) must be between -2147483648 and 2147483647\n\
 Year out of range (0-9999)\n"

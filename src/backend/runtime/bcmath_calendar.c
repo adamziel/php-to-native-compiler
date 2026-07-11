@@ -2928,8 +2928,8 @@ static int ptn_cal_validate_jewish_year_argument(
     size_t position,
     int64_t year
 ) {
-    if (year < 1 || year >= INT_MAX - 1) {
-        ptn_cal_throw_range_between(runtime, function_name, position, "year", 1, (int64_t)INT_MAX - 1);
+    if (year < INT_MIN || year > INT_MAX) {
+        ptn_cal_throw_range_between(runtime, function_name, position, "year", INT_MIN, INT_MAX);
         return 0;
     }
     return 1;
