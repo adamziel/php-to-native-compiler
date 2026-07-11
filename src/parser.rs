@@ -2789,6 +2789,23 @@ impl Parser<'_> {
                 modifiers.final_span.or(modifiers.abstract_span),
             ));
         }
+        if class_is_interface
+            && modifiers.is_abstract
+            && modifiers.visibility == PropertyVisibility::Public
+        {
+            let name_token_offset = if matches!(self.peek_n(1).kind, TokenKind::Ampersand) {
+                2
+            } else {
+                1
+            };
+            if let Some(method_name) = method_name_from_token(&self.peek_n(name_token_offset).kind)
+            {
+                return Err(Diagnostic::new(
+                    format!("Interface method {class_name}::{method_name}() must not be abstract"),
+                    modifiers.abstract_span,
+                ));
+            }
+        }
         if class_is_interface {
             modifiers.is_abstract = true;
         }
