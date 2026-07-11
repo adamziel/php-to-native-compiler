@@ -209,7 +209,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `assert.warning`, `date.timezone`, `display_errors`, `error_reporting`,
   `extension_dir`, `include_path`, `opcache.save_comments`,
   `pcre.backtrack_limit`, `pcre.jit`, `precision`, `serialize_precision`,
-  `user_agent`, `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
+  `sys_temp_dir`, `user_agent`, `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
   control rows are classified until PTN has a native process boundary. Harness
   cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky
