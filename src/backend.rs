@@ -55540,7 +55540,7 @@ impl ValueEmitter {
         out.push_str(");\n");
         out.push_str("    ptn_closure_set_scope(");
         out.push_str(&closure_temp);
-        out.push_str(", ");
+        out.push_str(", runtime.current_class_name != NULL ? runtime.current_class_name : ");
         out.push_str(&c_optional_string(function.class_name.as_deref()));
         out.push_str(
             ", runtime.current_called_class_name != NULL ? runtime.current_called_class_name : ",
