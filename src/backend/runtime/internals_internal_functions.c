@@ -72566,7 +72566,7 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_throw_exception(
             runtime,
             "ValueError",
-            "scandir(): Argument #2 ($sorting_order) must be one of SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE"
+            "scandir(): Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants"
         );
         return ptn_null();
     }

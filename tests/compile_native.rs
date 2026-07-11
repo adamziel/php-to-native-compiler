@@ -137294,6 +137294,11 @@ try {{\n\
 }} catch (ValueError $e) {{\n\
     echo $e->getMessage(), \"\\n\";\n\
 }}\n\
+try {{\n\
+    scandir(\"{}\", -1);\n\
+}} catch (ValueError $e) {{\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}}\n\
 foreach ([0, 2, 8, 16, 18, 24] as $flags) {{\n\
     try {{\n\
         $rows = file(\"{}\", $flags);\n\
@@ -137302,7 +137307,7 @@ foreach ([0, 2, 8, 16, 18, 24] as $flags) {{\n\
         echo $flags, ':', $e->getMessage(), \"\\n\";\n\
     }}\n\
 }}\n",
-            directory_path, lines_path
+            directory_path, directory_path, lines_path
         ),
     )
     .unwrap();
@@ -137316,6 +137321,7 @@ foreach ([0, 2, 8, 16, 18, 24] as $flags) {{\n\
         "0:1:2\n\
 b.txt|a.txt|..|.\n\
 scandir(): Argument #1 ($directory) must not be empty\n\
+scandir(): Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants\n\
 0:7:6\n\
 2:6:6\n\
 8:file(): Argument #2 ($flags) must be a valid flag value\n\
