@@ -84091,6 +84091,92 @@ $client->update([
 }
 
 #[test]
+fn compile_soap_wsdl_any_object_classmap_roundtrip_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-any-object-classmap");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-any-object-classmap.php");
+    let output = root.join("soap-wsdl-any-object-classmap-bin");
+    fs::write(
+        root.join("any.wsdl"),
+        r#"<wsdl:definitions xmlns:tns="urn:any" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:any">
+<wsdl:types><xsd:schema targetNamespace="urn:any" elementFormDefault="qualified">
+<xsd:element name="echoAnyElement"><xsd:complexType><xsd:sequence><xsd:element name="inputAny" minOccurs="0"><xsd:complexType><xsd:sequence><xsd:any /></xsd:sequence></xsd:complexType></xsd:element></xsd:sequence></xsd:complexType></xsd:element>
+<xsd:element name="echoAnyElementResponse"><xsd:complexType><xsd:sequence><xsd:element name="return" minOccurs="0"><xsd:complexType><xsd:sequence><xsd:any /></xsd:sequence></xsd:complexType></xsd:element></xsd:sequence></xsd:complexType></xsd:element>
+<xsd:element name="SOAPComplexType" type="tns:SOAPComplexType" />
+<xsd:complexType name="SOAPComplexType"><xsd:sequence><xsd:element name="varString" type="xsd:string" /><xsd:element name="varInt" type="xsd:int" /><xsd:element name="varFloat" type="xsd:float" /></xsd:sequence></xsd:complexType>
+</xsd:schema></wsdl:types>
+<wsdl:message name="echoAnyElementSoapIn"><wsdl:part name="parameters" element="tns:echoAnyElement" /></wsdl:message>
+<wsdl:message name="echoAnyElementSoapOut"><wsdl:part name="parameters" element="tns:echoAnyElementResponse" /></wsdl:message>
+<wsdl:portType name="AnyPortType"><wsdl:operation name="echoAnyElement"><wsdl:input message="tns:echoAnyElementSoapIn" /><wsdl:output message="tns:echoAnyElementSoapOut" /></wsdl:operation></wsdl:portType>
+<wsdl:binding name="AnyBinding" type="tns:AnyPortType"><soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" /><wsdl:operation name="echoAnyElement"><soap:operation soapAction="urn:echoAnyElement" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation></wsdl:binding>
+<wsdl:service name="AnyService"><wsdl:port name="AnyPort" binding="tns:AnyBinding"><soap:address location="test://" /></wsdl:port></wsdl:service>
+</wsdl:definitions>"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+class SOAPComplexType {
+    function __construct(public $varString = null, public $varInt = null, public $varFloat = null) {}
+}
+
+function echoAnyElement($x) {
+    global $seen;
+    $seen = $x;
+    $struct = $x->inputAny->any["SOAPComplexType"];
+    return ["return" => ["any" => ["SOAPComplexType" => new SoapVar($struct, SOAP_ENC_OBJECT, "SOAPComplexType", "urn:any", "SOAPComplexType", "urn:any")]]];
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction("echoAnyElement");
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        return $response;
+    }
+}
+
+ini_set("soap.wsdl_cache_enabled", 0);
+$options = ["trace" => 1, "exceptions" => 0, "classmap" => ["SOAPComplexType" => "SOAPComplexType"]];
+$client = new LocalSoapClient(__DIR__ . "/any.wsdl", $options);
+$ret = $client->echoAnyElement(["inputAny" => ["any" => new SoapVar(new SOAPComplexType("arg", 34, 325.325), SOAP_ENC_OBJECT, "SOAPComplexType", "urn:any", "SOAPComplexType", "urn:any")]]);
+var_dump($seen->inputAny->any["SOAPComplexType"] instanceof SOAPComplexType);
+var_dump($ret->return->any["SOAPComplexType"] instanceof SOAPComplexType);
+var_dump($ret->return->any["SOAPComplexType"]->varInt);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nint(34)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_literal_wildcard_value"));
+    assert!(c_source.contains("ptn_soap_decode_default_arg_with_options"));
+}
+
+#[test]
 fn compile_soap_ssl_method_deprecation_to_native_binary() {
     let root = temp_dir("ptn-native-soap-ssl-method-deprecation");
     fs::create_dir_all(&root).unwrap();
