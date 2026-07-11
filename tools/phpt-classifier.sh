@@ -1885,17 +1885,6 @@ ptn_phpt_first_unsupported_ini() {
                 fi
                 ;;
             disable_functions)
-                local disabled_functions=${value//,/ }
-                local disabled_function
-                for disabled_function in $disabled_functions; do
-                    if [[ "$path" =~ (^|/)ext/reflection/tests/ReflectionFunction_isDisabled_basic[.]phpt$ && "$disabled_function" == "is_file" ]]; then
-                        continue
-                    fi
-                    if [[ "$disabled_function" != "dl" ]]; then
-                        printf '%s\n' "$key"
-                        return 0
-                    fi
-                done
                 continue
                 ;;
         esac
@@ -1923,10 +1912,6 @@ ptn_phpt_unsupported_ini_blocker() {
             ;;
         enable_post_data_reading)
             printf 'unsupported-request-input-ini\trequires request/input/upload SAPI state from ini setting %s; PTN currently models script execution without request body ingestion\n' "$key"
-            return 0
-            ;;
-        disable_functions)
-            printf 'unsupported-function-disable-ini\trequires runtime function table mutation from disable_functions; PTN currently emits a fixed function registry\n'
             return 0
             ;;
         sendmail_path)
