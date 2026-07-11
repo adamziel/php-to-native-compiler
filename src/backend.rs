@@ -32,6 +32,8 @@ const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
     "Using ${expr} (variable variables) in strings is deprecated, use {${expr}} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
+    "_ZendTestClass",
+    "_ZendTestChildClass",
     "DoOperationNoCast",
     "LongCastableNoOperations",
     "FloatCastableNoOperations",
@@ -39702,7 +39704,12 @@ fn collect_assignment_target_runtime_requirements(
                 }
             }
         }
-        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+        AssignmentTarget::StaticPropertyArrayDim {
+            class_name,
+            dimensions,
+            ..
+        } => {
+            collect_static_property_class_runtime_requirements(class_name, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -39728,7 +39735,9 @@ fn collect_assignment_target_runtime_requirements(
             collect_value_runtime_requirements(receiver, functions, requirements);
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::StaticProperty { class_name, .. } => {
+            collect_static_property_class_runtime_requirements(class_name, requirements);
+        }
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
@@ -39821,7 +39830,12 @@ fn collect_inc_dec_target_runtime_requirements(
                 }
             }
         }
-        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+        IncDecTarget::StaticPropertyArrayDim {
+            class_name,
+            dimensions,
+            ..
+        } => {
+            collect_static_property_class_runtime_requirements(class_name, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -39835,7 +39849,9 @@ fn collect_inc_dec_target_runtime_requirements(
             collect_value_runtime_requirements(receiver, functions, requirements);
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        IncDecTarget::StaticProperty { .. } => {}
+        IncDecTarget::StaticProperty { class_name, .. } => {
+            collect_static_property_class_runtime_requirements(class_name, requirements);
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
@@ -40323,7 +40339,9 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(target, functions, requirements);
             }
         }
-        ValueExpr::StaticPropertyFetch { .. } => {}
+        ValueExpr::StaticPropertyFetch { class_name, .. } => {
+            collect_static_property_class_runtime_requirements(class_name, requirements);
+        }
         ValueExpr::ClassConstantFetch {
             class_name, name, ..
         } => {
@@ -40363,6 +40381,15 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(&arm.value, functions, requirements);
             }
         }
+    }
+}
+
+fn collect_static_property_class_runtime_requirements(
+    class_name: &str,
+    requirements: &mut RuntimeRequirements,
+) {
+    if modeled_internal_class_name(class_name).is_some() {
+        requirements.internal_function_dispatch = true;
     }
 }
 

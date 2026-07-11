@@ -14256,7 +14256,9 @@ fn is_modeled_archive_network_class_name(name: &str) -> bool {
 fn is_modeled_extension_internal_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "php_user_filter"
+        "_zendtestclass"
+            | "_zendtestchildclass"
+            | "php_user_filter"
             | "domnode"
             | "domdocument"
             | "domdocumentfragment"
