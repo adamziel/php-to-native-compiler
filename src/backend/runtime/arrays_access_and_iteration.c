@@ -6201,6 +6201,39 @@ static PTN_UNUSED void ptn_emit_static_property_non_static_notice_if_accessible(
     }
 }
 
+static PTN_UNUSED int ptn_object_static_property_instance_read_bypasses_private_visibility(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnPropertyVisibility visibility,
+    const char *access_scope
+) {
+    /* PORT NOTE: related class scopes reach the static-as-instance notice path
+       for private static properties; global/unrelated scopes still fatal. */
+    if (visibility != PTN_PROPERTY_PRIVATE ||
+        runtime == NULL ||
+        runtime->class_scope_allows == NULL ||
+        object == NULL ||
+        access_scope == NULL) {
+        return 0;
+    }
+    return runtime->class_scope_allows(access_scope, object->class_name);
+}
+
+static PTN_UNUSED char *ptn_object_static_property_instance_storage_key(
+    PtnObject *object,
+    const char *property,
+    int quiet
+) {
+    PtnArrayKey dynamic_key = ptn_array_string_key(property);
+    PtnArrayEntry *dynamic_entry =
+        ptn_array_entry_for_key(object->properties, dynamic_key);
+    ptn_array_key_free(dynamic_key);
+    if (dynamic_entry != NULL || !quiet) {
+        return ptn_duplicate_string(property);
+    }
+    return NULL;
+}
+
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -6419,6 +6452,33 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         }
         return ptn_duplicate_string(shared_property->storage_name);
     }
+    if (access_mode == PTN_PROPERTY_ACCESS_READ) {
+        PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
+        const char *static_declaring_class = NULL;
+        if (ptn_object_static_property_visibility(
+                runtime,
+                object,
+                property,
+                access_scope,
+                access_mode,
+                &static_visibility,
+                &static_declaring_class
+            ) &&
+            (ptn_property_visibility_allows(
+                    runtime,
+                    static_visibility,
+                    static_declaring_class,
+                    access_scope
+                ) ||
+                ptn_object_static_property_instance_read_bypasses_private_visibility(
+                    runtime,
+                    object,
+                    static_visibility,
+                    access_scope
+                ))) {
+            return ptn_object_static_property_instance_storage_key(object, property, quiet);
+        }
+    }
     const PtnObjectPropertyMetadata *own_private =
         ptn_object_own_private_property(object, property);
     if (own_private == NULL) {
@@ -6432,14 +6492,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 NULL,
                 NULL
             )) {
-            PtnArrayKey dynamic_key = ptn_array_string_key(property);
-            PtnArrayEntry *dynamic_entry =
-                ptn_array_entry_for_key(object->properties, dynamic_key);
-            ptn_array_key_free(dynamic_key);
-            if (dynamic_entry != NULL || !quiet) {
-                return ptn_duplicate_string(property);
-            }
-            return NULL;
+            return ptn_object_static_property_instance_storage_key(object, property, quiet);
         }
         PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
         const char *static_declaring_class = NULL;
@@ -7289,7 +7342,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
 #endif
     PtnPropertyVisibility static_visibility = PTN_PROPERTY_PUBLIC;
     const char *inaccessible_static_declaring_class = NULL;
-    if (!ptn_object_instance_property_accessible(
+    int inaccessible_static_property_read = !ptn_object_instance_property_accessible(
             runtime,
             receiver.as.object,
             property,
@@ -7304,6 +7357,13 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             PTN_PROPERTY_ACCESS_READ,
             &static_visibility,
             &inaccessible_static_declaring_class
+        );
+    if (inaccessible_static_property_read &&
+        !ptn_object_static_property_instance_read_bypasses_private_visibility(
+            runtime,
+            receiver.as.object,
+            static_visibility,
+            access_scope
         )) {
         ptn_throw_property_visibility_error(
             runtime,
