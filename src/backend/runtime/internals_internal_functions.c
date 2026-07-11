@@ -253409,6 +253409,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getAttribute")
             || ptn_ascii_case_equal(method_name, "fetch")
             || ptn_ascii_case_equal(method_name, "fetchAll")
+            || ptn_ascii_case_equal(method_name, "fetchObject")
             || ptn_ascii_case_equal(method_name, "fetchColumn")
             || ptn_ascii_case_equal(method_name, "getColumnMeta")
             || ptn_ascii_case_equal(method_name, "setFetchMode")
@@ -255508,6 +255509,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getAttribute",
             "fetch",
             "fetchAll",
+            "fetchObject",
             "fetchColumn",
             "getColumnMeta",
             "setFetchMode",
@@ -269338,6 +269340,49 @@ static PtnValue ptn_pdo_fetch_all(PtnRuntime *runtime, PtnValue statement, int m
     return result;
 }
 
+static int ptn_pdo_fetch_class_exists(PtnRuntime *runtime, const char *class_name) {
+    return class_name != NULL && ptn_declared_runtime_class_exists(runtime, class_name);
+}
+
+static void ptn_pdo_throw_invalid_fetch_class_name(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *class_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must be a valid class name, %s given",
+        function_name,
+        position,
+        argument_name,
+        class_name == NULL ? "" : class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must be a valid class name, %s given",
+        function_name,
+        position,
+        argument_name,
+        class_name == NULL ? "" : class_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
 static PTN_UNUSED PtnValue ptn_pdo_statement_foreach_row_value(PtnValue row_value) {
     row_value = ptn_value_deref(row_value);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -270718,8 +270763,47 @@ static PTN_UNUSED PtnValue ptn_pdo_statement_call_method(
             class_copy = ptn_duplicate_string_len(class_operand.data, class_operand.len);
             ptn_string_operand_free(class_operand);
             class_name = class_copy;
+            if (!ptn_pdo_fetch_class_exists(runtime, class_name)) {
+                ptn_pdo_throw_invalid_fetch_class_name(
+                    runtime,
+                    "PDOStatement::fetchAll",
+                    2,
+                    "class",
+                    class_name
+                );
+                free(class_copy);
+                return ptn_null();
+            }
         }
         PtnValue result = ptn_pdo_fetch_all(runtime, receiver, mode, class_name, line);
+        free(class_copy);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "fetchObject")) {
+        const char *class_name = "stdClass";
+        char *class_copy = NULL;
+        if (argc >= 1) {
+            PtnStringOperand class_operand = ptn_internal_expect_string_arg(runtime, "PDOStatement::fetchObject", 1, "class", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(class_operand);
+                return ptn_null();
+            }
+            class_copy = ptn_duplicate_string_len(class_operand.data, class_operand.len);
+            ptn_string_operand_free(class_operand);
+            class_name = class_copy;
+            if (!ptn_pdo_fetch_class_exists(runtime, class_name)) {
+                ptn_pdo_throw_invalid_fetch_class_name(
+                    runtime,
+                    "PDOStatement::fetchObject",
+                    1,
+                    "class",
+                    class_name
+                );
+                free(class_copy);
+                return ptn_null();
+            }
+        }
+        PtnValue result = ptn_pdo_fetch_row(runtime, receiver, PTN_PDO_FETCH_CLASS, 0, class_name, ptn_null(), line);
         free(class_copy);
         return result;
     }

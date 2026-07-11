@@ -26894,6 +26894,7 @@ fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) 
                 | "getattribute"
                 | "fetch"
                 | "fetchall"
+                | "fetchobject"
                 | "fetchcolumn"
                 | "getcolumnmeta"
                 | "setfetchmode"
