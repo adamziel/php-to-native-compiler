@@ -436,6 +436,19 @@ static void ptn_request_free(void *pointer) {
     free(pointer);
 }
 
+static char *ptn_duplicate_untracked_string_len(const char *string, size_t len) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        fputs("Out of memory\n", stderr);
+        abort();
+    }
+    if (len != 0) {
+        memcpy(copy, string, len);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
 #define malloc(size) ptn_request_malloc((size))
 #define calloc(count, size) ptn_request_calloc((count), (size))
 #define realloc(pointer, size) ptn_request_realloc((pointer), (size))

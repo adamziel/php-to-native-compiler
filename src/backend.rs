@@ -3961,6 +3961,9 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED void ptn_emit_compile_warning_with_trace_frame(PtnRuntime *runtime, const char *frame_name, const char *display_path, const char *message, const char *path, size_t line) {\n",
     );
+    out.push_str("    if (runtime != NULL && !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
     out.push_str("    if (runtime == NULL || frame_name == NULL) {\n");
     out.push_str("        ptn_emit_compile_warning(runtime, message, path, line);\n");
     out.push_str("        return;\n");

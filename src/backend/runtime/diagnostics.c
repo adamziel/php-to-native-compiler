@@ -82,7 +82,7 @@ static PTN_UNUSED void ptn_symbols_set_len(
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name = ptn_duplicate_untracked_string_len(name, name_len);
     symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
@@ -124,7 +124,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope_at_len(
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name = ptn_duplicate_untracked_string_len(name, name_len);
     symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
@@ -201,7 +201,7 @@ static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write_len(
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name = ptn_duplicate_untracked_string_len(name, name_len);
     symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = ptn_null();
     symbols->len++;
