@@ -73606,6 +73606,45 @@ string(66) \"locale_get_display_name(): name too long: U_ILLEGAL_ARGUMENT_ERROR\
 }
 
 #[test]
+fn compile_intl_locale_display_name_components_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-locale-display-name-components");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-locale-display-name-components.php");
+    let output = root.join("intl-locale-display-name-components-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$cases = [\n\
+    ['sl_IT_rozaj@currency=EUR', 'fr'],\n\
+    ['zh-Hans-CN', 'de'],\n\
+    ['root', 'en'],\n\
+    ['i-enochian', 'de'],\n\
+    ['en-a-myExt-b-another', 'en'],\n\
+    ['sl_IT_nedis-a-kirti-x-xyz', 'en'],\n\
+];\n\
+foreach ($cases as [$locale, $displayLocale]) {\n\
+    echo Locale::getDisplayName($locale, $displayLocale), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "slovène (Italie, dialecte de Resia, devise=euro)\n\
+Chinesisch (Vereinfacht, China)\n\
+Unknown language\n\
+i-enochian (Privatnutzung=i-enochian)\n\
+English (a=myext, b=another)\n\
+Slovenian (Italy, NEDIS_A_KIRTI)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_message_formatter_negative_array_key_exception_to_native_binary() {
     let root = temp_dir("ptn-native-intl-message-formatter-negative-key");
     fs::create_dir_all(&root).unwrap();
