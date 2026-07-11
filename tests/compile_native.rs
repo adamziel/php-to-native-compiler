@@ -87034,6 +87034,101 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
+fn compile_soap_wsdl_null_response_preserves_declared_type_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-null-response-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-null-response-type.php");
+    let output = root.join("soap-wsdl-null-response-type-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function f() {}
+
+$wsdl = __DIR__ . '/null-response-type.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ab" targetNamespace="urn:ab"
+  xmlns:typens="urn:ab"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <xsd:schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:ab">
+      <xsd:complexType name="A">
+        <xsd:sequence>
+          <xsd:element name="x" type="xsd:anyType"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="f"/>
+  <message name="fResponse"><part name="fReturn" type="typens:A"/></message>
+  <portType name="abServerPortType">
+    <operation name="f"><input message="typens:f"/><output message="typens:fResponse"/></operation>
+  </portType>
+  <binding name="abServerBinding" type="typens:abServerPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="f">
+      <soap:operation soapAction="urn:abServerAction"/>
+      <input><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="abService">
+    <port name="abServerPort" binding="typens:abServerBinding"><soap:address location="test://"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class LocalSoapClient extends SoapClient {
+    public $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('f');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        return ob_get_clean();
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['trace' => true]);
+$client->f();
+echo $client->__getLastResponse(), "\n";
+echo $client->server->__getLastResponse(), "\n";
+var_dump($client->__getLastResponse() === $client->server->__getLastResponse());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("<fReturn xsi:nil=\"true\" xsi:type=\"ns1:A\"/>").count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_emit_encoded_null_response"));
+    assert!(c_source.contains("ptn_soap_operation_message_parts"));
+}
+
+#[test]
 fn compile_soap_encoded_response_resolves_href_cycle_to_native_binary() {
     let root = temp_dir("ptn-native-soap-encoded-href-cycle");
     fs::create_dir_all(&root).unwrap();
