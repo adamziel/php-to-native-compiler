@@ -91499,6 +91499,29 @@ fn compile_legacy_assert_options_state_to_native_binary() {
 }
 
 #[test]
+fn compile_assert_null_description_uses_assertion_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-null-description");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-null-description.php");
+    let output = root.join("assert-null-description-bin");
+    fs::write(
+        &input,
+        "<?php error_reporting(E_ALL & ~E_DEPRECATED); ini_set(\"assert.exception\", 0); assert_options(ASSERT_CALLBACK, function($file, $line, $code, $desc = null) { echo \"cb:\"; var_dump($code, $desc); }); var_dump(assert(false, null));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "cb:NULL\nNULL\n\nWarning: assert(): Assertion failed in ptn on line 1\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_assert_bail_option_exits_native_binary() {
     let root = temp_dir("ptn-native-assert-bail-option");
     fs::create_dir_all(&root).unwrap();

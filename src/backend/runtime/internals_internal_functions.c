@@ -162740,7 +162740,8 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(1);
     }
 
-    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
+    PtnValue description = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();
+    char *message = (argc >= 2 && description.type != PTN_NULL) ? ptn_value_to_string(args[1]) : NULL;
     int has_callback_exception = 0;
     PtnValue callback = ptn_null();
     if (ptn_runtime_assert_callback_configured(runtime)) {
@@ -162750,18 +162751,23 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
                 ptn_owned_string(ptn_duplicate_string(runtime->source_path == NULL ? "" : runtime->source_path)),
                 ptn_int((int64_t)line),
                 ptn_null(),
-                ptn_owned_string(ptn_duplicate_string(message))
+                ptn_null()
             };
+            size_t callback_argc = 3;
+            if (message != NULL) {
+                callback_args[3] = ptn_owned_string(ptn_duplicate_string(message));
+                callback_argc = 4;
+            }
             PtnValue callback_result = ptn_null();
             int callback_succeeded = ptn_internal_call_callback_capturing_exception(
                 runtime,
                 callback,
-                4,
+                callback_argc,
                 callback_args,
                 line,
                 &callback_result
             );
-            for (size_t i = 0; i < 4; i++) {
+            for (size_t i = 0; i < callback_argc; i++) {
                 ptn_value_destroy(&callback_args[i]);
             }
             ptn_value_destroy(&callback_result);
@@ -162794,7 +162800,9 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
                 return ptn_bool(0);
             }
         }
-        ptn_assert_set_assertion_exception(runtime, message, line);
+        char *exception_message = message != NULL ? message : ptn_duplicate_string("");
+        ptn_assert_set_assertion_exception(runtime, exception_message, line);
+        message = NULL;
         if (ptn_runtime_assert_bail(runtime)) {
             ptn_value_destroy(&callback);
             ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
@@ -162806,7 +162814,8 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(0);
     } else {
         if (ptn_runtime_assert_warning(runtime)) {
-            size_t message_len = strlen(message);
+            const char *warning_message = message != NULL ? message : "Assertion";
+            size_t message_len = strlen(warning_message);
             const char *prefix = "assert(): ";
             const char *suffix = " failed";
             size_t warning_len = strlen(prefix) + message_len + strlen(suffix);
@@ -162816,7 +162825,7 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
                 free(message);
                 ptn_abort_out_of_memory();
             }
-            snprintf(warning, warning_len + 1, "%s%s%s", prefix, message, suffix);
+            snprintf(warning, warning_len + 1, "%s%s%s", prefix, warning_message, suffix);
             ptn_emit_warning(&runtime->diagnostics, warning, line);
             free(warning);
         }
