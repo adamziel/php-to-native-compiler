@@ -42494,6 +42494,34 @@ static void ptn_sprintf_append_manual_padding(
     }
 }
 
+static int ptn_sprintf_append_nonfinite_double(PtnStringBuffer *buffer, double number, const PtnSprintfSpec *spec) {
+    const char *token = NULL;
+    size_t token_len = 0;
+    int is_negative = 0;
+    if (isnan(number)) {
+        token = "NaN";
+        token_len = 3;
+        is_negative = number < 0;
+    } else if (isinf(number)) {
+        is_negative = number < 0;
+        token = is_negative ? "-INF" : "INF";
+        token_len = strlen(token);
+    } else {
+        return 0;
+    }
+
+    char padding = spec->pad_char != '\0' ? spec->pad_char : (spec->zero_pad ? '0' : ' ');
+    if (!spec->left_adjust && padding == '0' && (is_negative || spec->show_sign)) {
+        ptn_string_buffer_append_char(buffer, is_negative ? '-' : '+');
+        if (token_len > 0) {
+            ptn_string_buffer_append_len(buffer, token + 1, token_len - 1);
+        }
+    } else {
+        ptn_string_buffer_append_len(buffer, token, token_len);
+    }
+    return 1;
+}
+
 static void ptn_sprintf_warn_object_numeric(PtnRuntime *runtime, PtnValue value, const char *target_type, size_t line) {
     value = ptn_value_deref(value);
     const char *class_name = NULL;
@@ -43024,6 +43052,10 @@ static PtnValue ptn_internal_sprintf_named_mode(
                 if (effective.has_precision && effective.precision == -1) {
                     effective.precision = 17;
                 }
+                double number = ptn_sprintf_value_to_double(runtime, arg, line);
+                if (ptn_sprintf_append_nonfinite_double(&output, number, &spec)) {
+                    break;
+                }
                 if (manual_padding) {
                     effective.has_width = 0;
                     effective.left_adjust = 0;
@@ -43042,7 +43074,7 @@ static PtnValue ptn_internal_sprintf_named_mode(
                 size_t formatted_len = 0;
                 char *formatted = ptn_sprintf_format_snprintf_double(
                     c_format,
-                    ptn_sprintf_value_to_double(runtime, arg, line),
+                    number,
                     &formatted_len
                 );
                 if (spec.has_precision && spec.precision == 0) {

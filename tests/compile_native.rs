@@ -38093,6 +38093,68 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_sprintf_non_finite_float_tokens_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-non-finite-floats");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sprintf-non-finite-floats.php");
+    let output = root.join("sprintf-non-finite-floats-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$values = [NAN, -NAN, INF, -INF];
+foreach (["%f", "%E", "%.17g", "%8f", "%-8f", "%08f", "%+8f", "%+08f", "%'_8f"] as $format) {
+    echo $format, ":";
+    foreach ($values as $value) {
+        echo "[", sprintf($format, $value), "]";
+    }
+    echo "\n";
+}
+printf("bug:{%f} %1\$f\n", pow(-1.0, 0.3));
+echo "v:", vsprintf("%f|%+08f", [NAN, INF]), "\n";
+printf("p:%f|%+08f\n", -NAN, INF);
+$fp = fopen("php://temp", "w+");
+fprintf($fp, "f:%f|%+08f\n", INF, -INF);
+vfprintf($fp, "vf:%+08f|%+08f\n", [NAN, -INF]);
+rewind($fp);
+echo stream_get_contents($fp);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "status: {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status,
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "%f:[NaN][NaN][INF][-INF]\n\
+%E:[NaN][NaN][INF][-INF]\n\
+%.17g:[NaN][NaN][INF][-INF]\n\
+%8f:[NaN][NaN][INF][-INF]\n\
+%-8f:[NaN][NaN][INF][-INF]\n\
+%08f:[NaN][NaN][INF][-INF]\n\
+%+8f:[NaN][NaN][INF][-INF]\n\
+%+08f:[+aN][+aN][+NF][-INF]\n\
+%'_8f:[NaN][NaN][INF][-INF]\n\
+bug:{NaN} NaN\n\
+v:NaN|+NF\n\
+p:NaN|+NF\n\
+f:INF|-INF\n\
+vf:+aN|-INF\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sprintf_append_nonfinite_double"));
+}
+
+#[test]
 fn compile_sprintf_resource_string_conversion_to_native_binary() {
     let root = temp_dir("ptn-native-sprintf-resource-string-conversion");
     fs::create_dir_all(&root).unwrap();
