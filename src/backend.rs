@@ -6890,6 +6890,12 @@ fn emit_user_function_prototypes(
         out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_dynamic_function_name(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_callable_from_dynamic_call(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_callable_named_from_dynamic_call(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);\n",
+        );
     }
     out.push_str(
         "static PTN_UNUSED int ptn_zend_test_class_has_test_method(const char *class_name);\n",
@@ -31298,6 +31304,14 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String, full_internal_
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_dynamic_call_allows_scope_function_callback(const char *name) {\n",
+    );
+    out.push_str("    return ptn_ascii_case_equal(name, \"func_get_arg\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(name, \"func_get_args\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(name, \"func_num_args\");\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_dynamic_call_throw_if_forbidden(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    if (!ptn_dynamic_call_forbidden_name(name)) {\n");
@@ -32119,7 +32133,7 @@ fn emit_callable_dispatch(
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
     out.push_str(
-        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, argc, args, line)) {\n",
+        "    if (!ptn_dynamic_call_allows_scope_function_callback(dynamic_lookup_name) && ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, argc, args, line)) {\n",
     );
     out.push_str("        free(name);\n");
     out.push_str("        return ptn_null();\n");
@@ -32142,6 +32156,38 @@ fn emit_callable_dispatch(
     out.push_str("    ptn_dynamic_call_free_prepared_first_array_argument(prepared_args);\n");
     out.push_str("    free(name);\n");
     out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_callable_dynamic_call_throw_if_forbidden(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type != PTN_STRING) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
+    out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
+    out.push_str("    int forbidden = ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    free(name);\n");
+    out.push_str("    return forbidden;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_callable_from_dynamic_call(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    if (ptn_callable_dynamic_call_throw_if_forbidden(runtime, callable, argc, args, line)) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_call_callable(runtime, callable, argc, args, line, 0);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_callable_named_from_dynamic_call(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line) {\n",
+    );
+    out.push_str("    if (ptn_callable_dynamic_call_throw_if_forbidden(runtime, callable, argc, args, line)) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_call_callable_named(runtime, callable, argc, args, arg_names, line, 0);\n");
     out.push_str("}\n");
 }
 
@@ -66005,13 +66051,13 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_call_callable(&runtime, ");
+                out.push_str(" = ptn_call_callable_from_dynamic_call(&runtime, ");
                 out.push_str(&callee_temp);
                 out.push_str(", 1, ");
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(", 0);\n");
+                out.push_str(");\n");
                 out.push_str("    runtime.throw_argument_count_errors = ");
                 out.push_str(&saved_argument_count_errors_temp);
                 out.push_str(";\n");
@@ -66072,7 +66118,7 @@ impl ValueEmitter {
             };
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_callable_named(&runtime, ");
+            out.push_str(" = ptn_call_callable_named_from_dynamic_call(&runtime, ");
             out.push_str(&callee_temp);
             out.push_str(", ");
             out.push_str(&args_temp);
@@ -66082,7 +66128,7 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".names, ");
             out.push_str(&line.to_string());
-            out.push_str(", 0);\n");
+            out.push_str(");\n");
             if let Some(temp) = scoped_callable_deprecation_temp {
                 out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
                 out.push_str(&temp);
@@ -66110,11 +66156,11 @@ impl ValueEmitter {
             };
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(" = ptn_call_callable_from_dynamic_call(&runtime, ");
             out.push_str(&callee_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
-            out.push_str(", 0);\n");
+            out.push_str(");\n");
             if let Some(temp) = scoped_callable_deprecation_temp {
                 out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
                 out.push_str(&temp);
@@ -66170,7 +66216,7 @@ impl ValueEmitter {
         };
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_callable(&runtime, ");
+        out.push_str(" = ptn_call_callable_from_dynamic_call(&runtime, ");
         out.push_str(&callee_temp);
         out.push_str(", ");
         out.push_str(&arguments.len().to_string());
@@ -66178,7 +66224,7 @@ impl ValueEmitter {
         out.push_str(&args_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
-        out.push_str(", 0);\n");
+        out.push_str(");\n");
         if let Some(temp) = scoped_callable_deprecation_temp {
             out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
             out.push_str(&temp);
