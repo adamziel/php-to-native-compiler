@@ -88218,6 +88218,8 @@ file_put_contents($wsdl, <<<'WSDL'
   <message name="echoHexBinaryResponse"><part name="outputHexBinary" type="xsd:hexBinary"/></message>
   <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
   <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echoStringArrayRequest"><part name="inputStringArray" type="s:ArrayOfstring"/></message>
+  <message name="echoStringArrayResponse"><part name="outputStringArray" type="s:ArrayOfstring"/></message>
   <message name="echo2DStringArrayRequest"><part name="input2DStringArray" type="s:ArrayOfString2D"/></message>
   <message name="echo2DStringArrayResponse"><part name="return" type="s:ArrayOfString2D"/></message>
   <message name="echoNestedArrayRequest"><part name="inputStruct" type="s:SOAPArrayStruct"/></message>
@@ -88228,6 +88230,7 @@ file_put_contents($wsdl, <<<'WSDL'
     <operation name="echoBase64"><input message="tns:echoBase64Request"/><output message="tns:echoBase64Response"/></operation>
     <operation name="echoHexBinary"><input message="tns:echoHexBinaryRequest"/><output message="tns:echoHexBinaryResponse"/></operation>
     <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echoStringArray"><input message="tns:echoStringArrayRequest"/><output message="tns:echoStringArrayResponse"/></operation>
     <operation name="echo2DStringArray"><input message="tns:echo2DStringArrayRequest"/><output message="tns:echo2DStringArrayResponse"/></operation>
     <operation name="echoNestedArray"><input message="tns:echoNestedArrayRequest"/><output message="tns:echoNestedArrayResponse"/></operation>
     <operation name="echoStructArray"><input message="tns:echoStructArrayRequest"/><output message="tns:echoStructArrayResponse"/></operation>
@@ -88237,6 +88240,7 @@ file_put_contents($wsdl, <<<'WSDL'
     <operation name="echoBase64"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoHexBinary"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoDecimal"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoStringArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echo2DStringArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoNestedArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
     <operation name="echoStructArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
@@ -88255,6 +88259,7 @@ class Round2Service {
     function echoBase64($value) { return $value; }
     function echoHexBinary($value) { return $value; }
     function echoDecimal($value) { return $value; }
+    function echoStringArray($value) { return $value; }
     function echo2DStringArray($value) { return $value; }
     function echoNestedArray($value) { return $value; }
     function echoStructArray($value) { return $value; }
@@ -88277,6 +88282,10 @@ foreach ([
     $client->__soapCall($method, [$value], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
     echo round2_server_response($wsdl, $client->__getLastRequest());
 }
+
+$client->__soapCall('echoStringArray', [[]], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+echo $client->__getLastRequest();
+echo round2_server_response($wsdl, $client->__getLastRequest());
 
 $plain2d = [
     ['row0col0', 'row0col1', 'row0col2'],
@@ -88332,6 +88341,14 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
     );
     assert!(
         stdout.contains("<outputDecimal xsi:type=\"xsd:decimal\">12345.67890</outputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoStringArray><param0 SOAP-ENC:arrayType=\"xsd:ur-type[0]\" xsi:type=\"SOAP-ENC:Array\"/></ns1:echoStringArray>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:ns2=\"http://soapinterop.org/xsd\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:echoStringArrayResponse><outputStringArray SOAP-ENC:arrayType=\"xsd:string[0]\" xsi:type=\"ns2:ArrayOfstring\"/></ns1:echoStringArrayResponse>"),
         "{stdout}"
     );
     assert!(
