@@ -206,7 +206,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, `standard`, and `uri` extension surface plus accepted runner ini keys
   (`assert.active`, `assert.bail`, `assert.callback`, `assert.exception`,
-  `assert.warning`, `date.timezone`, `display_errors`, `error_reporting`,
+  `assert.warning`, `auto_globals_jit`, `date.timezone`, `display_errors`, `error_reporting`,
   `disable_functions`, `extension_dir`, `include_path`, `opcache.save_comments`,
   `pcre.backtrack_limit`, `pcre.jit`, `precision`, `serialize_precision`,
   `sys_temp_dir`, `user_agent`, `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
