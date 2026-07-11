@@ -294,6 +294,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
         caller_runtime->by_ref_argument_function_name_override;
+    runtime->suppress_by_ref_argument_warning_frame_location =
+        caller_runtime->suppress_by_ref_argument_warning_frame_location;
     runtime->by_ref_argument_notice_pending = caller_runtime->by_ref_argument_notice_pending;
     runtime->by_ref_argument_notice_emitted = caller_runtime->by_ref_argument_notice_emitted;
     runtime->by_ref_argument_notice_line = caller_runtime->by_ref_argument_notice_line;
@@ -1939,7 +1941,9 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         &runtime->diagnostics,
         message,
         line,
-        runtime != NULL && runtime->suppress_user_call_frame_location
+        runtime != NULL &&
+            (runtime->suppress_user_call_frame_location ||
+             runtime->suppress_by_ref_argument_warning_frame_location)
     );
     free(message);
 }

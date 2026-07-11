@@ -2449,6 +2449,7 @@ struct PtnRuntime {
     int has_current_receiver;
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
+    int suppress_by_ref_argument_warning_frame_location;
     int by_ref_argument_notice_pending;
     int by_ref_argument_notice_emitted;
     size_t by_ref_argument_notice_line;

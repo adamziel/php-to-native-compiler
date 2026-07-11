@@ -3570,6 +3570,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override = NULL;
+    runtime->suppress_by_ref_argument_warning_frame_location = 0;
     runtime->by_ref_argument_notice_pending = 0;
     runtime->by_ref_argument_notice_emitted = 0;
     runtime->by_ref_argument_notice_line = 0;
@@ -4041,6 +4042,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->call_site_line = 0;
     runtime->suppress_user_call_frame_location = 0;
     runtime->suppress_user_argument_count_location = 0;
+    runtime->suppress_by_ref_argument_warning_frame_location = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
     runtime->gc_enabled = 1;

@@ -63416,6 +63416,7 @@ impl ValueEmitter {
         let callable_temp = self.emit_materialized_value(out, &arguments[0]);
         let previous_call_site_line_temp = self.next_temp();
         let previous_warn_by_ref_temp = self.next_temp();
+        let previous_suppress_by_ref_warning_frame_temp = self.next_temp();
         let checked_callback_temp = self.next_temp();
         let trace_frame_temp = self.next_temp();
         let callback_ok_temp = self.next_temp();
@@ -63425,6 +63426,9 @@ impl ValueEmitter {
         out.push_str("    int ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(" = runtime.warn_by_ref_argument_mismatch;\n");
+        out.push_str("    int ");
+        out.push_str(&previous_suppress_by_ref_warning_frame_temp);
+        out.push_str(" = runtime.suppress_by_ref_argument_warning_frame_location;\n");
         out.push_str("    runtime.call_site_line = ");
         out.push_str(&line.to_string());
         out.push_str(";\n");
@@ -63454,6 +63458,8 @@ impl ValueEmitter {
             out.push_str(", 1, &");
             out.push_str(&callable_temp);
             out.push_str(");\n");
+            out.push_str("    runtime.suppress_by_ref_argument_warning_frame_location = 1;\n");
+            out.push_str("    ");
             out.push_str(&callback_ok_temp);
             out.push_str(" = ptn_internal_call_callback_capturing_exception_impl(&runtime, ");
             out.push_str(&checked_callback_temp);
@@ -63462,6 +63468,9 @@ impl ValueEmitter {
             out.push_str(", 1, 0, &");
             out.push_str(&result_temp);
             out.push_str(");\n");
+            out.push_str("    runtime.suppress_by_ref_argument_warning_frame_location = ");
+            out.push_str(&previous_suppress_by_ref_warning_frame_temp);
+            out.push_str(";\n");
             out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
             out.push_str(&trace_frame_temp);
             out.push_str(");\n");
@@ -63538,6 +63547,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&trace_args_temp);
         out.push_str(");\n");
+        out.push_str("    runtime.suppress_by_ref_argument_warning_frame_location = 1;\n");
+        out.push_str("    ");
         out.push_str(&callback_ok_temp);
         out.push_str(" = ptn_internal_call_callback_capturing_exception_impl(&runtime, ");
         out.push_str(&checked_callback_temp);
@@ -63550,6 +63561,9 @@ impl ValueEmitter {
         out.push_str(", 1, 0, &");
         out.push_str(&result_temp);
         out.push_str(");\n");
+        out.push_str("    runtime.suppress_by_ref_argument_warning_frame_location = ");
+        out.push_str(&previous_suppress_by_ref_warning_frame_temp);
+        out.push_str(";\n");
         out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
         out.push_str(&trace_frame_temp);
         out.push_str(");\n");
