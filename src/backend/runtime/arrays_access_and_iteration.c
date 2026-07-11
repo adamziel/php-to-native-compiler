@@ -12673,6 +12673,53 @@ static PTN_UNUSED int ptn_generator_append_delegate_entry(
     return 1;
 }
 
+static PTN_UNUSED int ptn_generator_append_force_close_yield_from_entry(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t line
+) {
+    if (
+        generator == NULL ||
+        generator->values == NULL ||
+        generator->keys == NULL ||
+        generator->reference_notice_lines == NULL ||
+        generator->yield_lines == NULL ||
+        generator->delegate_sources == NULL ||
+        generator->force_close_yield_from_entries == NULL ||
+        generator->output_chunks == NULL
+    ) {
+        return 0;
+    }
+
+    if (
+        !ptn_array_append_key_available(runtime, generator->values) ||
+        !ptn_array_append_key_available(runtime, generator->keys) ||
+        !ptn_array_append_key_available(runtime, generator->reference_notice_lines) ||
+        !ptn_array_append_key_available(runtime, generator->yield_lines) ||
+        !ptn_array_append_key_available(runtime, generator->delegate_sources) ||
+        !ptn_array_append_key_available(runtime, generator->force_close_yield_from_entries) ||
+        !ptn_array_append_key_available(runtime, generator->output_chunks)
+    ) {
+        return 0;
+    }
+
+    PtnArrayKey value_key = ptn_array_int_key(generator->values->next_auto_key);
+    PtnArrayKey raw_key_index = ptn_array_int_key(generator->keys->next_auto_key);
+    PtnArrayKey notice_key = ptn_array_int_key(generator->reference_notice_lines->next_auto_key);
+    PtnArrayKey line_key = ptn_array_int_key(generator->yield_lines->next_auto_key);
+    PtnArrayKey delegate_key = ptn_array_int_key(generator->delegate_sources->next_auto_key);
+    PtnArrayKey force_close_key = ptn_array_int_key(generator->force_close_yield_from_entries->next_auto_key);
+    PtnArrayKey output_key = ptn_array_int_key(generator->output_chunks->next_auto_key);
+    ptn_array_set_entry(generator->values, value_key, ptn_null());
+    ptn_array_set_entry(generator->keys, raw_key_index, ptn_null());
+    ptn_array_set_entry(generator->reference_notice_lines, notice_key, ptn_int(0));
+    ptn_array_set_entry(generator->yield_lines, line_key, ptn_int((int64_t)line));
+    ptn_array_set_entry(generator->delegate_sources, delegate_key, ptn_null());
+    ptn_array_set_entry(generator->force_close_yield_from_entries, force_close_key, ptn_int(1));
+    ptn_array_set_entry(generator->output_chunks, output_key, ptn_generator_take_pending_output(generator));
+    return 1;
+}
+
 static PTN_UNUSED void ptn_generator_adopt_pending_yield_from_delegate(PtnRuntime *runtime, PtnValue source) {
     if (runtime == NULL || runtime->pending_yield_from_generator == NULL) {
         return;
@@ -19085,6 +19132,18 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
 ) {
     PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
     PtnObject *fiber = runtime == NULL ? NULL : runtime->current_fiber;
+    /* PORT NOTE: php-src's ZEND_YIELD_FROM checks forced-close before type
+     * checks or iterator/delegate setup. This flag means generated cleanup
+     * is recording code after a suspended yield, so only operand side effects
+     * before yield-from are visible. */
+    if (
+        generator != NULL &&
+        runtime != NULL &&
+        runtime->generator_aborted_after_yield
+    ) {
+        ptn_generator_append_force_close_yield_from_entry(runtime, generator, line);
+        return ptn_null();
+    }
     if (
         generator != NULL &&
         (
