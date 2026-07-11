@@ -27,6 +27,10 @@ on:
         description: Wall-clock watchdog timeout per shard job
         required: true
         default: "120"
+      manifest_path:
+        description: Optional repo-relative PHPT manifest for continuation runs
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -144,8 +148,14 @@ jobs:
       - name: Generate full-corpus shard
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+          PTN_PHPT_MANIFEST_PATH: ${{ inputs.manifest_path }}
         run: |
+          manifest_args=()
+          if [[ -n "$PTN_PHPT_MANIFEST_PATH" ]]; then
+            manifest_args=(--manifest "$PTN_PHPT_MANIFEST_PATH")
+          fi
           tools/phpt-full-corpus-shard.sh \
+            "${manifest_args[@]}" \
             --shard-index "${{ matrix.shard }}" \
             --shard-count "${{ inputs.shard_count }}" \
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"
@@ -329,8 +339,14 @@ jobs:
       - name: Generate full-corpus shard
         env:
           PHP_SRC_PHPT: ${{ github.workspace }}/.runtime/php-src-phpt
+          PTN_PHPT_MANIFEST_PATH: ${{ inputs.manifest_path }}
         run: |
+          manifest_args=()
+          if [[ -n "$PTN_PHPT_MANIFEST_PATH" ]]; then
+            manifest_args=(--manifest "$PTN_PHPT_MANIFEST_PATH")
+          fi
           tools/phpt-full-corpus-shard.sh \
+            "${manifest_args[@]}" \
             --shard-index "${{ matrix.shard }}" \
             --shard-count "${{ inputs.shard_count }}" \
             --out ".runtime/full-phpt-shards/shard-${{ matrix.shard }}.txt"

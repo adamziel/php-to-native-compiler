@@ -6,15 +6,16 @@ source "$repo_root/tools/phpt-corpus.sh"
 
 usage() {
   cat <<'EOF'
-Usage: tools/phpt-full-corpus-shard.sh --shard-index N --shard-count N --out FILE
+Usage: tools/phpt-full-corpus-shard.sh [--manifest FILE] --shard-index N --shard-count N --out FILE
 
-Write one deterministic shard of the full php-src PHPT corpus.
+Write one deterministic shard of the full php-src PHPT corpus or a manifest.
 
 Rows are sorted lexicographically and assigned by zero-based row number modulo
 the shard count. Shard indexes are zero-based.
 EOF
 }
 
+manifest=
 shard_index=
 shard_count=
 out=
@@ -34,6 +35,11 @@ while [[ $# -gt 0 ]]; do
     --out)
       [[ $# -ge 2 ]] || { echo "--out requires a value" >&2; exit 2; }
       out=$2
+      shift 2
+      ;;
+    --manifest)
+      [[ $# -ge 2 ]] || { echo "--manifest requires a value" >&2; exit 2; }
+      manifest=$2
       shift 2
       ;;
     -h|--help)
@@ -72,9 +78,21 @@ mkdir -p "$(dirname "$out")"
 tmp="$(mktemp "$repo_root/.runtime/phpt-shard.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 
-(cd "$php_src" && find . -path './.git' -prune -o -type f -name '*.phpt' -print \
-  | sed 's#^\./##' \
-  | LC_ALL=C sort) > "$tmp"
+if [[ -n "$manifest" ]]; then
+  manifest_path="$manifest"
+  if [[ "$manifest_path" != /* ]]; then
+    manifest_path="$repo_root/$manifest_path"
+  fi
+  if [[ ! -f "$manifest_path" ]]; then
+    echo "--manifest file not found: $manifest" >&2
+    exit 2
+  fi
+  grep -Ev '^[[:space:]]*(#|$)' "$manifest_path" > "$tmp"
+else
+  (cd "$php_src" && find . -path './.git' -prune -o -type f -name '*.phpt' -print \
+    | sed 's#^\./##' \
+    | LC_ALL=C sort) > "$tmp"
+fi
 
 total_rows="$(wc -l < "$tmp" | tr -d '[:space:]')"
 
@@ -83,6 +101,9 @@ total_rows="$(wc -l < "$tmp" | tr -d '[:space:]')"
   echo "# corpus: $php_src"
   echo "# corpus-revision: $corpus_revision"
   echo "# total-rows: $total_rows"
+  if [[ -n "$manifest" ]]; then
+    echo "# manifest: $manifest"
+  fi
   echo "# shard-index: $shard_index"
   echo "# shard-count: $shard_count"
   echo
