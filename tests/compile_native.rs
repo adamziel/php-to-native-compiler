@@ -41327,6 +41327,330 @@ var_dump($result->fetchArray());
 }
 
 #[test]
+fn compile_sqlite3_create_collation_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-sqlite3-create-collation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sqlite3-create-collation.php");
+    let output = root.join("sqlite3-create-collation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ChildSqlite extends SQLite3 {}
+class OverrideSqlite extends SQLite3 {
+    public function createCollation($custom, $other = null): bool {
+        return false;
+    }
+}
+
+$method = new ReflectionMethod(ChildSqlite::class, 'createCollation');
+$collationListings = 0;
+foreach (get_class_methods(ChildSqlite::class) as $listedMethod) {
+    if ($listedMethod === 'createCollation') {
+        $collationListings++;
+    }
+}
+echo 'methods:',
+    (int) method_exists(SQLite3::class, 'createCollation'),
+    (int) method_exists(ChildSqlite::class, 'createCollation'),
+    (int) in_array('createCollation', get_class_methods(ChildSqlite::class), true),
+    (int) method_exists(ChildSqlite::class, 'createFunction'),
+    (int) method_exists(ChildSqlite::class, 'lastExtendedErrorCode'), ':',
+    $collationListings,
+    "\n";
+echo 'meta:',
+    $method->getDeclaringClass()->getName(), ':',
+    (int) $method->isInternal(), ':',
+    (int) $method->isPublic(), ':',
+    $method->getNumberOfRequiredParameters(), '/',
+    $method->getNumberOfParameters(), ':',
+    (int) $method->hasReturnType(), ':',
+    (int) $method->hasTentativeReturnType(), ':',
+    $method->getTentativeReturnType(),
+    "\n";
+foreach ($method->getParameters() as $parameter) {
+    echo $parameter->getName(), ':', $parameter->getType(), ':', (int) $parameter->isOptional(), "\n";
+}
+$override = new ReflectionMethod(OverrideSqlite::class, 'createCollation');
+echo 'override:',
+    (int) $override->isInternal(), ':',
+    $override->getNumberOfRequiredParameters(), '/',
+    $override->getNumberOfParameters(), ':',
+    $override->getParameters()[0]->getName(), ':',
+    $override->getParameters()[1]->getName(), ':',
+    (int) $override->getParameters()[1]->isOptional(), ':',
+    (int) $override->hasReturnType(), ':',
+    (int) $override->hasTentativeReturnType(), ':',
+    $override->getReturnType(),
+    "\n";
+$overrideObject = new OverrideSqlite(':memory:');
+var_dump($overrideObject->createCollation('custom'));
+
+$reflection = new ReflectionClass(SQLite3::class);
+$uninitialized = $reflection->newInstanceWithoutConstructor();
+foreach ([
+    fn() => $uninitialized->createCollation(),
+    fn() => $uninitialized->createCollation(new stdClass(), 'strcmp'),
+    fn() => $uninitialized->createCollation('NAT', 'missing_callback'),
+    fn() => $uninitialized->createCollation('NAT', 'strcmp'),
+] as $call) {
+    try {
+        $call();
+    } catch (Throwable $error) {
+        echo $error::class, ': ', $error->getMessage(), "\n";
+    }
+}
+
+class TrackedCollation {
+    public string $id;
+
+    public function __construct(string $id) {
+        $this->id = $id;
+    }
+
+    public function compare(string $left, string $right): int {
+        global $events;
+        $events[] = $this->id;
+        return strnatcmp($left, $right);
+    }
+
+    public function __destruct() {
+        echo 'destroy:', $this->id, "\n";
+    }
+}
+
+$db = new SQLite3(':memory:');
+$empty = new TrackedCollation('E');
+var_dump($db->createCollation('', [$empty, 'compare']));
+unset($empty);
+echo "after-empty\n";
+
+$events = [];
+$a = new TrackedCollation('A');
+$b = new TrackedCollation('B');
+$c = new TrackedCollation('C');
+$db->createCollation('CaseName', [$a, 'compare']);
+$db->createCollation('casename', [$b, 'compare']);
+$db->createCollation('CASENAME', [$c, 'compare']);
+$db->exec('CREATE TABLE c (value TEXT)');
+$db->exec("INSERT INTO c VALUES ('a1'), ('a10'), ('a2')");
+$result = $db->query('SELECT value FROM c ORDER BY value COLLATE casename');
+echo 'query-events:', implode('', $events), "\n";
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    echo $row['value'], "\n";
+}
+echo 'all-events:', implode('', $events), "\n";
+unset($result, $a, $b, $c);
+echo "before-close\n";
+$db->close();
+echo "after-close\n";
+unset($db);
+echo "after-db\n";
+
+class TrampolineCollation {
+    public function __call(string $name, array $arguments) {
+        echo 'trampoline:', $name, "\n";
+        return strnatcmp(...$arguments);
+    }
+}
+
+$db = new SQLite3(':memory:');
+$trampoline = new TrampolineCollation();
+$db->createCollation('NAT', [$trampoline, 'NAT']);
+$db->exec('CREATE TABLE trampoline_values (value TEXT)');
+$db->exec("INSERT INTO trampoline_values VALUES ('a1'), ('a10'), ('a2')");
+$result = $db->query('SELECT value FROM trampoline_values ORDER BY value COLLATE NAT');
+echo "query-returned\n";
+$row = $result->fetchArray(SQLITE3_ASSOC);
+echo 'first:', $row['value'], "\n";
+unset($result, $db, $trampoline);
+
+$timingCalls = 0;
+$timingDb = new SQLite3(':memory:');
+$timingDb->exec('CREATE TABLE timing_values (value TEXT)');
+$timingDb->exec("INSERT INTO timing_values VALUES ('a1'), ('a10'), ('a2')");
+$timingDb->createCollation('TIMING', function($left, $right) use (&$timingCalls) {
+    $timingCalls++;
+    return strnatcmp($left, $right);
+});
+$timingResult = $timingDb->query('SELECT value FROM timing_values ORDER BY value COLLATE TIMING');
+echo 'reset-query:', $timingCalls, "\n";
+var_dump($timingResult->reset());
+echo 'reset-before:', $timingCalls, "\n";
+$row = $timingResult->fetchArray(SQLITE3_ASSOC);
+echo 'fetch-before:', $timingCalls, ':', $row['value'], "\n";
+var_dump($timingResult->reset());
+echo 'reset-after:', $timingCalls, "\n";
+$row = $timingResult->fetchArray(SQLITE3_ASSOC);
+echo 'fetch-after:', $timingCalls, ':', $row['value'], "\n";
+$finalizedResult = $timingDb->query('SELECT value FROM timing_values ORDER BY value COLLATE TIMING');
+echo 'final-query:', $timingCalls, "\n";
+var_dump($finalizedResult->finalize());
+echo 'finalize:', $timingCalls, "\n";
+try {
+    $finalizedResult->fetchArray(new stdClass());
+} catch (Throwable $error) {
+    echo 'final-type:', $error::class, ':', $error->getMessage(), ':', $timingCalls, "\n";
+}
+try {
+    $finalizedResult->fetchAll(new stdClass());
+} catch (Throwable $error) {
+    echo 'final-all-type:', $error::class, ':', $error->getMessage(), ':', $timingCalls, "\n";
+}
+try {
+    $finalizedResult->fetchArray(SQLITE3_ASSOC);
+} catch (Throwable $error) {
+    echo 'final-error:', $error::class, ':', $error->getMessage(), ':', $timingCalls, "\n";
+}
+
+function run_invalid_collation($returnValue, string $label): void {
+    $db = new SQLite3(':memory:');
+    $db->enableExceptions(true);
+    $db->exec('CREATE TABLE invalid_values (value TEXT)');
+    $db->exec("INSERT INTO invalid_values VALUES ('a1'), ('a10'), ('a2')");
+    $db->createCollation('BAD', fn($left, $right) => $returnValue);
+    $seen = [];
+    set_error_handler(function($severity, $message) use (&$seen, $label) {
+        if (!isset($seen[$message])) {
+            echo $label, ':', $message, "\n";
+            $seen[$message] = true;
+        }
+        return true;
+    });
+    $result = $db->query('SELECT value FROM invalid_values ORDER BY value COLLATE BAD');
+    $result->fetchArray();
+    restore_error_handler();
+}
+
+run_invalid_collation(true, 'bool');
+run_invalid_collation('1', 'string');
+
+$execDb = new SQLite3(':memory:');
+$execDb->enableExceptions(true);
+$execDb->exec('CREATE TABLE exec_values (value TEXT)');
+$execDb->exec("INSERT INTO exec_values VALUES ('a1'), ('a10'), ('a2')");
+$execDb->createCollation('BAD', fn($left, $right) => true);
+$execWarningSeen = false;
+set_error_handler(function($severity, $message) use (&$execWarningSeen) {
+    if (!$execWarningSeen) {
+        echo 'exec:', $message, "\n";
+        $execWarningSeen = true;
+    }
+    return true;
+});
+$execDb->exec('SELECT value FROM exec_values ORDER BY value COLLATE BAD');
+restore_error_handler();
+
+$calls = 0;
+$db = new SQLite3(':memory:');
+$db->exec('CREATE TABLE stopped_values (value TEXT)');
+$db->exec("INSERT INTO stopped_values VALUES ('a1'), ('a10'), ('a2')");
+$db->createCollation('STOP', function() use (&$calls) {
+    $calls++;
+    throw new Exception('stop');
+});
+try {
+    $db->query('SELECT value FROM stopped_values ORDER BY value COLLATE STOP');
+} catch (Throwable $error) {
+    echo 'throw:', $error->getMessage(), ':', $calls, "\n";
+}
+
+$child = new ChildSqlite(':memory:');
+var_dump($child->createCollation('NATURAL', 'strnatcmp'));
+$child->exec('CREATE TABLE child_values (value TEXT)');
+$child->exec("INSERT INTO child_values VALUES ('2'), ('10')");
+$row = $child->query('SELECT value FROM child_values ORDER BY value COLLATE NATURAL')
+    ->fetchArray(SQLITE3_ASSOC);
+echo 'child:', $row['value'], "\n";
+
+$base = new SQLite3(':memory:');
+var_dump($base->createFunction('LOWER', 'strtolower'));
+echo 'base-function:', $base->querySingle("SELECT LOWER('ABC')"), ':',
+    $base->lastExtendedErrorCode(), "\n";
+var_dump($child->createFunction('LOWER', 'strtolower'));
+echo 'child-function:', $child->querySingle("SELECT LOWER('ABC')"), ':',
+    $child->lastExtendedErrorCode(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "methods:11111:1\n\
+meta:SQLite3:1:1:2/2:0:1:bool\n\
+name:string:0\n\
+callback:callable:0\n\
+override:0:1/2:custom:other:1:1:0:bool\n\
+bool(false)\n\
+ArgumentCountError: SQLite3::createCollation() expects exactly 2 arguments, 0 given\n\
+TypeError: SQLite3::createCollation(): Argument #1 ($name) must be of type string, stdClass given\n\
+TypeError: SQLite3::createCollation(): Argument #2 ($callback) must be a valid callback, function \"missing_callback\" not found or invalid function name\n\
+Error: The SQLite3 object has not been correctly initialised or is already closed\n\
+bool(false)\n\
+destroy:E\n\
+after-empty\n\
+query-events:CC\n\
+a1\n\
+a2\n\
+a10\n\
+all-events:CCCC\n\
+before-close\n\
+after-close\n\
+destroy:C\n\
+destroy:B\n\
+destroy:A\n\
+after-db\n\
+trampoline:NAT\n\
+trampoline:NAT\n\
+query-returned\n\
+trampoline:NAT\n\
+trampoline:NAT\n\
+first:a1\n\
+reset-query:2\n\
+bool(true)\n\
+reset-before:2\n\
+fetch-before:4:a1\n\
+bool(true)\n\
+reset-after:4\n\
+fetch-after:6:a1\n\
+final-query:8\n\
+bool(true)\n\
+finalize:8\n\
+final-type:TypeError:SQLite3Result::fetchArray(): Argument #1 ($mode) must be of type int, stdClass given:8\n\
+final-all-type:TypeError:SQLite3Result::fetchAll(): Argument #1 ($mode) must be of type int, stdClass given:8\n\
+final-error:Error:The SQLite3Result object has not been correctly initialised or is already closed:8\n\
+bool:SQLite3::query(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.\n\
+bool:SQLite3Result::fetchArray(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.\n\
+string:SQLite3::query(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.\n\
+string:SQLite3Result::fetchArray(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.\n\
+exec:SQLite3::exec(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.\n\
+throw:stop:1\n\
+bool(true)\n\
+child:2\n\
+bool(true)\n\
+base-function:abc:0\n\
+bool(true)\n\
+child-function:abc:0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_db_register_sqlite_collation"));
+    assert!(c_source.contains("ptn_sqlite3_result_rerun_before_fetch"));
+    assert!(c_source.contains("PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS"));
+}
+
+#[test]
 fn compile_sqlite3_authorizer_bind_and_rename_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-sqlite3-authorizer-bind-rename");
     fs::create_dir_all(&root).unwrap();

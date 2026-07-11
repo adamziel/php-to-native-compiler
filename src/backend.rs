@@ -30543,7 +30543,7 @@ fn emit_method_dispatch(
         "        return ptn_pdo_statement_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_sqlite3(class_name)) {\n");
+    out.push_str("    if (ptn_internal_class_name_is_sqlite3(class_name) || (ptn_object_is_internal_or_descendant(resolved, \"SQLite3\") && ptn_internal_class_method_exists(\"SQLite3\", method_name))) {\n");
     out.push_str(
         "        return ptn_sqlite3_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );

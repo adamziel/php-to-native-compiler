@@ -11201,6 +11201,11 @@ static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS[]
     { "args", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS[] = {
+    { "name", "string", "string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_ARRAY_SLICE_PARAMETERS[] = {
     { "array", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
     { "offset", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
@@ -252197,7 +252202,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "changes")
             || ptn_ascii_case_equal(method_name, "enableExceptions")
             || ptn_ascii_case_equal(method_name, "setAuthorizer")
+            || ptn_ascii_case_equal(method_name, "createFunction")
+            || ptn_ascii_case_equal(method_name, "createCollation")
             || ptn_ascii_case_equal(method_name, "lastErrorCode")
+            || ptn_ascii_case_equal(method_name, "lastExtendedErrorCode")
             || ptn_ascii_case_equal(method_name, "lastErrorMsg");
     }
     if (ptn_internal_class_name_is_sqlite3_stmt(class_name)) {
@@ -252455,6 +252463,40 @@ static void ptn_append_method_names(
 ) {
     for (size_t i = 0; i < count; i++) {
         ptn_append_method_name(result, index, names[i]);
+    }
+}
+
+static void ptn_append_unique_method_names(PtnValue result, PtnValue source) {
+    if (result.type != PTN_ARRAY || source.type != PTN_ARRAY ||
+        result.as.array->len > (size_t)INT64_MAX) {
+        return;
+    }
+    int64_t index = (int64_t)result.as.array->len;
+    for (size_t source_index = 0; source_index < source.as.array->len; source_index++) {
+        PtnValue candidate = ptn_value_deref(source.as.array->entries[source_index].value);
+        if (candidate.type != PTN_STRING) {
+            continue;
+        }
+        int found = 0;
+        for (size_t result_index = 0; result_index < result.as.array->len; result_index++) {
+            PtnValue existing = ptn_value_deref(result.as.array->entries[result_index].value);
+            if (existing.type == PTN_STRING &&
+                existing.as.string.len == candidate.as.string.len &&
+                ptn_ascii_case_equal(
+                    (const char *)existing.as.string.data,
+                    (const char *)candidate.as.string.data
+                )) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(index++),
+                ptn_value_clone(candidate)
+            );
+        }
     }
 }
 
@@ -254234,6 +254276,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "enableExceptions",
             "setAuthorizer",
             "createFunction",
+            "createCollation",
             "lastErrorCode",
             "lastExtendedErrorCode",
             "lastErrorMsg",
@@ -257679,6 +257722,28 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
             immutable ? "DateTimeImmutable" : "DateTime",
             0,
             0
+        );
+    }
+    if (
+        ptn_ascii_case_equal(data->class_name, "SQLite3") &&
+        ptn_ascii_case_equal(data->name, "createCollation")
+    ) {
+        return ptn_function_metadata_with_tentative_return(
+            ptn_function_metadata_found(
+                "SQLite3::createCollation",
+                1,
+                sizeof(PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS) /
+                    sizeof(PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS[0]),
+                sizeof(PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS) /
+                    sizeof(PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS[0]),
+                0,
+                PTN_INTERNAL_SQLITE3_CREATE_COLLATION_PARAMETERS,
+                0,
+                "bool",
+                "bool",
+                0,
+                1
+            )
         );
     }
     if (
@@ -265364,6 +265429,11 @@ typedef struct PtnDbTable {
     struct PtnDbTable *next;
 } PtnDbTable;
 
+typedef struct PtnDbRetiredCallback {
+    PtnValue callback;
+    struct PtnDbRetiredCallback *next;
+} PtnDbRetiredCallback;
+
 typedef struct {
     char *dsn;
     char *driver;
@@ -265379,6 +265449,7 @@ typedef struct {
     char *authorizer_error_message;
     PtnValue sqlite_functions;
     PtnValue sqlite_collations;
+    PtnDbRetiredCallback *sqlite_retired_collations;
     PtnValue last_error_info;
     int64_t last_error_code;
     int64_t last_extended_error_code;
@@ -265426,6 +265497,8 @@ typedef struct {
     PtnValue bound_values;
     size_t cursor;
     int finalized;
+    int rerun_before_fetch;
+    int rerun_on_reset;
     char *fetch_error_message;
 } PtnSqlite3ResultData;
 
@@ -265485,6 +265558,12 @@ static void ptn_db_connection_data_clear(PtnDbConnectionData *data) {
     ptn_db_table_free(data->tables);
     ptn_value_destroy(&data->last_error_info);
     ptn_value_destroy(&data->sqlite_collations);
+    while (data->sqlite_retired_collations != NULL) {
+        PtnDbRetiredCallback *retired = data->sqlite_retired_collations;
+        data->sqlite_retired_collations = retired->next;
+        ptn_value_destroy(&retired->callback);
+        free(retired);
+    }
     free(data->last_error_message);
     free(data->statement_class);
     ptn_value_destroy(&data->statement_ctor_args);
@@ -265501,6 +265580,7 @@ static void ptn_db_connection_data_clear(PtnDbConnectionData *data) {
     ptn_value_destroy(&data->sqlite_functions);
     data->sqlite_functions = ptn_null();
     data->sqlite_collations = ptn_null();
+    data->sqlite_retired_collations = NULL;
     data->has_authorizer = 0;
 }
 
@@ -265956,6 +266036,20 @@ static void ptn_db_register_sqlite_collation(PtnDbConnectionData *db, const char
         db->sqlite_collations = ptn_array_from_literal_entries(0, NULL);
     }
     char *key = ptn_db_lower_key_copy(name);
+    PtnArrayKey array_key = ptn_array_string_key(key);
+    PtnArrayEntry *existing = ptn_array_entry_for_key(db->sqlite_collations.as.array, array_key);
+    ptn_array_key_free(array_key);
+    if (existing != NULL) {
+        PtnDbRetiredCallback *retired = malloc(sizeof(PtnDbRetiredCallback));
+        if (retired == NULL) {
+            free(key);
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        retired->callback = ptn_value_clone_deref(existing->value);
+        retired->next = db->sqlite_retired_collations;
+        db->sqlite_retired_collations = retired;
+    }
     ptn_array_set_entry(db->sqlite_collations.as.array, ptn_array_string_key(key), callback);
     free(key);
 }
@@ -266836,7 +266930,9 @@ static int ptn_db_compare_row_values_for_order(
     PtnValue right_row,
     const char *column,
     const char *collation,
-    size_t line
+    const char *operation_name,
+    size_t line,
+    int *compared_out
 ) {
     PtnValue left_value = ptn_db_row_column_value(left_row, column);
     PtnValue right_value = ptn_db_row_column_value(right_row, column);
@@ -266854,18 +266950,126 @@ static int ptn_db_compare_row_values_for_order(
         ptn_value_destroy(&callback);
         ptn_value_destroy(&callback_args[0]);
         ptn_value_destroy(&callback_args[1]);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            free(left_string);
+            free(right_string);
+            return 0;
+        }
         PtnValue resolved = ptn_value_deref(result);
         if (resolved.type == PTN_INT) {
             compared = resolved.as.integer < 0 ? -1 : (resolved.as.integer > 0 ? 1 : 0);
-        } else if (resolved.type == PTN_BOOL) {
-            compared = resolved.as.boolean ? 1 : 0;
+        } else {
+            char warning[256];
+            int written = snprintf(
+                warning,
+                sizeof(warning),
+                "%s(): An error occurred while invoking the compare callback (invalid return type).  Collation behaviour is undefined.",
+                operation_name == NULL ? "SQLite3::query" : operation_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(warning)) {
+                ptn_value_destroy(&result);
+                free(left_string);
+                free(right_string);
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_spaced_warning(&runtime->diagnostics, warning, line);
+            compared = 0;
         }
         ptn_value_destroy(&result);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(left_string);
+            free(right_string);
+            return 0;
+        }
     }
 
     free(left_string);
     free(right_string);
-    return compared;
+    *compared_out = compared;
+    return 1;
+}
+
+static int ptn_db_sort_custom_collation_indices(
+    PtnRuntime *runtime,
+    PtnDbConnectionData *db,
+    PtnArray *array,
+    size_t *indices,
+    size_t *scratch,
+    size_t begin,
+    size_t end,
+    const char *column,
+    const char *collation,
+    const char *operation_name,
+    int descending,
+    size_t line
+) {
+    if (end - begin <= 1) {
+        return 1;
+    }
+    size_t middle = begin + (end - begin) / 2;
+    if (!ptn_db_sort_custom_collation_indices(
+            runtime,
+            db,
+            array,
+            indices,
+            scratch,
+            begin,
+            middle,
+            column,
+            collation,
+            operation_name,
+            descending,
+            line
+        ) ||
+        !ptn_db_sort_custom_collation_indices(
+            runtime,
+            db,
+            array,
+            indices,
+            scratch,
+            middle,
+            end,
+            column,
+            collation,
+            operation_name,
+            descending,
+            line
+        )) {
+        return 0;
+    }
+    size_t left = begin;
+    size_t right = middle;
+    size_t output = begin;
+    while (left < middle && right < end) {
+        int compared = 0;
+        if (!ptn_db_compare_row_values_for_order(
+                runtime,
+                db,
+                array->entries[indices[left]].value,
+                array->entries[indices[right]].value,
+                column,
+                collation,
+                operation_name,
+                line,
+                &compared
+            )) {
+            return 0;
+        }
+        if (descending ? compared >= 0 : compared <= 0) {
+            scratch[output++] = indices[left++];
+        } else {
+            scratch[output++] = indices[right++];
+        }
+    }
+    while (left < middle) {
+        scratch[output++] = indices[left++];
+    }
+    while (right < end) {
+        scratch[output++] = indices[right++];
+    }
+    memcpy(indices + begin, scratch + begin, (end - begin) * sizeof(size_t));
+    return 1;
 }
 
 static void ptn_db_sort_rows_by_order_clause(
@@ -266873,8 +267077,13 @@ static void ptn_db_sort_rows_by_order_clause(
     PtnDbConnectionData *db,
     PtnValue *rows,
     const char *order_clause,
-    size_t line
+    const char *operation_name,
+    size_t line,
+    int *used_custom_collation_out
 ) {
+    if (used_custom_collation_out != NULL) {
+        *used_custom_collation_out = 0;
+    }
     if (rows == NULL || rows->type != PTN_ARRAY || rows->as.array->len < 2 || order_clause == NULL) {
         return;
     }
@@ -266887,26 +267096,82 @@ static void ptn_db_sort_rows_by_order_clause(
         return;
     }
     PtnArray *array = rows->as.array;
-    for (size_t i = 1; i < array->len; i++) {
-        PtnArrayEntry moving = array->entries[i];
-        size_t j = i;
-        while (j > 0) {
-            int compared = ptn_db_compare_row_values_for_order(
-                runtime,
-                db,
-                array->entries[j - 1].value,
-                moving.value,
-                column,
-                collation,
-                line
-            );
-            if (descending ? compared >= 0 : compared <= 0) {
-                break;
-            }
-            array->entries[j] = array->entries[j - 1];
-            j--;
+    int custom_collation = ptn_db_sqlite_collation_entry(db, collation) != NULL;
+    if (used_custom_collation_out != NULL) {
+        *used_custom_collation_out = custom_collation;
+    }
+    if (custom_collation) {
+        size_t *indices = malloc(array->len * sizeof(size_t));
+        size_t *scratch = malloc(array->len * sizeof(size_t));
+        PtnArrayEntry *ordered = malloc(array->len * sizeof(PtnArrayEntry));
+        if (indices == NULL || scratch == NULL || ordered == NULL) {
+            free(indices);
+            free(scratch);
+            free(ordered);
+            free(column);
+            free(collation);
+            ptn_abort_out_of_memory();
         }
-        array->entries[j] = moving;
+        for (size_t i = 0; i < array->len; i++) {
+            indices[i] = i;
+        }
+        int sorted = ptn_db_sort_custom_collation_indices(
+            runtime,
+            db,
+            array,
+            indices,
+            scratch,
+            0,
+            array->len,
+            column,
+            collation,
+            operation_name,
+            descending,
+            line
+        );
+        if (sorted) {
+            for (size_t i = 0; i < array->len; i++) {
+                ordered[i] = array->entries[indices[i]];
+            }
+            memcpy(array->entries, ordered, array->len * sizeof(PtnArrayEntry));
+        }
+        free(indices);
+        free(scratch);
+        free(ordered);
+        if (!sorted) {
+            free(column);
+            free(collation);
+            return;
+        }
+    } else {
+        for (size_t i = 1; i < array->len; i++) {
+            PtnArrayEntry moving = array->entries[i];
+            size_t j = i;
+            while (j > 0) {
+                int compared = 0;
+                if (!ptn_db_compare_row_values_for_order(
+                        runtime,
+                        db,
+                        array->entries[j - 1].value,
+                        moving.value,
+                        column,
+                        collation,
+                        operation_name,
+                        line,
+                        &compared
+                    )) {
+                    free(column);
+                    free(collation);
+                    return;
+                }
+                if (descending ? compared >= 0 : compared <= 0) {
+                    break;
+                }
+                array->entries[j] = array->entries[j - 1];
+                j--;
+            }
+            array->entries[j] = moving;
+        }
     }
     for (size_t i = 0; i < array->len; i++) {
         ptn_array_key_free(array->entries[i].key);
@@ -267186,10 +267451,15 @@ static int ptn_db_query(
     PtnValue *columns_out,
     PtnValue *column_tables_out,
     char **error_out,
-    size_t line
+    const char *operation_name,
+    size_t line,
+    int *used_custom_collation_out
 ) {
     if (error_out != NULL) {
         *error_out = NULL;
+    }
+    if (used_custom_collation_out != NULL) {
+        *used_custom_collation_out = 0;
     }
     char *trimmed = ptn_db_trimmed_copy(sql);
     size_t len = strlen(trimmed);
@@ -267334,7 +267604,15 @@ static int ptn_db_query(
         } else {
             ptn_db_select_no_table(runtime, db, select_list, where_clause, bound_values, rows_out, columns_out, column_tables_out, line);
         }
-        ptn_db_sort_rows_by_order_clause(runtime, db, rows_out, order_clause, line);
+        ptn_db_sort_rows_by_order_clause(
+            runtime,
+            db,
+            rows_out,
+            order_clause,
+            operation_name,
+            line,
+            used_custom_collation_out
+        );
         row_count = (int)(*rows_out).as.array->len;
         free(select_list);
         free(from_clause);
@@ -267360,6 +267638,7 @@ static int ptn_db_query_batch(
     PtnDbConnectionData *db,
     const char *sql,
     char **error_out,
+    const char *operation_name,
     size_t line
 ) {
     if (error_out != NULL) {
@@ -267399,7 +267678,9 @@ static int ptn_db_query_batch(
                     &columns,
                     &column_tables,
                     &statement_error,
-                    line
+                    operation_name,
+                    line,
+                    NULL
                 );
                 ptn_value_destroy(&bound_values);
                 if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
@@ -267948,7 +268229,7 @@ static PtnValue ptn_pdo_execute_statement(PtnRuntime *runtime, PtnValue receiver
     PtnValue columns = ptn_array_from_literal_entries(0, NULL);
     PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
     char *error_message = NULL;
-    int row_count = ptn_db_query(runtime, db, statement->sql, statement->bound_values, &rows, &columns, &column_tables, &error_message, line);
+    int row_count = ptn_db_query(runtime, db, statement->sql, statement->bound_values, &rows, &columns, &column_tables, &error_message, "PDOStatement::execute", line, NULL);
     if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
         ptn_pdo_handle_query_error(runtime, db, error_message);
         free(error_message);
@@ -268223,6 +268504,7 @@ static void ptn_db_initialize_connection(PtnDbConnectionData *data, const char *
     data->authorizer_error_message = NULL;
     data->sqlite_functions = ptn_array_from_literal_entries(0, NULL);
     data->sqlite_collations = ptn_array_from_literal_entries(0, NULL);
+    data->sqlite_retired_collations = NULL;
     data->last_error_info = ptn_array_from_literal_entries(0, NULL);
     data->statement_ctor_args = ptn_array_from_literal_entries(0, NULL);
     ptn_db_set_ok_error_info(data);
@@ -268405,6 +268687,25 @@ static PtnValue ptn_sqlite3_result_object_for_statement(
     data->db = ptn_value_clone_deref(statement->db);
     data->sql = ptn_duplicate_string(statement->sql);
     data->bound_values = ptn_value_clone_deref(statement->bound_values);
+    return object;
+}
+
+static PtnValue ptn_sqlite3_result_object_for_query(
+    PtnRuntime *runtime,
+    PtnValue db,
+    const char *sql,
+    PtnValue rows,
+    PtnValue columns,
+    PtnValue column_tables,
+    int rerun_before_fetch
+) {
+    PtnValue object = ptn_sqlite3_result_object(runtime, rows, columns, column_tables);
+    PtnSqlite3ResultData *data = (PtnSqlite3ResultData *)object.as.object->native_data;
+    data->db = ptn_value_clone_deref(db);
+    data->sql = ptn_duplicate_string(sql == NULL ? "" : sql);
+    data->bound_values = ptn_array_from_literal_entries(0, NULL);
+    data->rerun_before_fetch = rerun_before_fetch;
+    data->rerun_on_reset = rerun_before_fetch;
     return object;
 }
 
@@ -268654,7 +268955,7 @@ static PTN_UNUSED PtnValue ptn_pdo_call_method(
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, line);
+        int row_count = ptn_db_query(runtime, db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, "PDO::query", line, NULL);
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             ptn_pdo_handle_query_error(runtime, db, error_message);
             free(error_message);
@@ -268695,7 +268996,7 @@ static PTN_UNUSED PtnValue ptn_pdo_call_method(
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, line);
+        int row_count = ptn_db_query(runtime, db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, "PDO::exec", line, NULL);
         ptn_value_destroy(&rows);
         ptn_value_destroy(&columns);
         ptn_value_destroy(&column_tables);
@@ -269023,6 +269324,68 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
     size_t line
 ) {
     PtnSqlite3Data *sqlite = ptn_sqlite3_data(receiver);
+    if (ptn_ascii_case_equal(name, "createCollation")) {
+        if (argc != 2) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SQLite3::createCollation() expects exactly 2 arguments, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnStringOperand collation_name = ptn_internal_expect_string_arg(
+            runtime,
+            "SQLite3::createCollation",
+            1,
+            "name",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(collation_name);
+            return ptn_null();
+        }
+        PtnValue callback_input = ptn_value_clone_deref(args[1]);
+        PtnValue callback = ptn_internal_expect_callback_arg_autoload(
+            runtime,
+            "SQLite3::createCollation",
+            2,
+            "callback",
+            callback_input
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(collation_name);
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        ptn_value_destroy(&callback_input);
+        if (sqlite == NULL || !sqlite->open) {
+            ptn_string_operand_free(collation_name);
+            ptn_value_destroy(&callback);
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "The SQLite3 object has not been correctly initialised or is already closed"
+            );
+            return ptn_null();
+        }
+        if (collation_name.len == 0) {
+            ptn_string_operand_free(collation_name);
+            ptn_value_destroy(&callback);
+            return ptn_bool(0);
+        }
+        char *name_copy = ptn_duplicate_string_len(collation_name.data, collation_name.len);
+        ptn_string_operand_free(collation_name);
+        ptn_db_register_sqlite_collation(&sqlite->db, name_copy, callback);
+        free(name_copy);
+        return ptn_bool(1);
+    }
     if (sqlite == NULL || !sqlite->open) {
         ptn_throw_exception(runtime, "Error", "The SQLite3 object has not been correctly initialised or is already closed");
         return ptn_null();
@@ -269036,7 +269399,14 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
         char *sql_copy = ptn_duplicate_string_len(sql.data, sql.len);
         ptn_string_operand_free(sql);
         char *error_message = NULL;
-        int row_count = ptn_db_query_batch(runtime, &sqlite->db, sql_copy, &error_message, line);
+        int row_count = ptn_db_query_batch(
+            runtime,
+            &sqlite->db,
+            sql_copy,
+            &error_message,
+            "SQLite3::exec",
+            line
+        );
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             PtnValue result = ptn_sqlite3_handle_query_error(runtime, sqlite, "exec", error_message, line);
             free(error_message);
@@ -269059,7 +269429,8 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, &sqlite->db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, line);
+        int used_custom_collation = 0;
+        int row_count = ptn_db_query(runtime, &sqlite->db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, "SQLite3::query", line, &used_custom_collation);
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             PtnValue result = ptn_sqlite3_handle_query_error(runtime, sqlite, "query", error_message, line);
             free(error_message);
@@ -269070,8 +269441,17 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
             return result;
         }
         free(error_message);
+        PtnValue result = ptn_sqlite3_result_object_for_query(
+            runtime,
+            receiver,
+            sql_copy,
+            rows,
+            columns,
+            column_tables,
+            used_custom_collation
+        );
         free(sql_copy);
-        return ptn_sqlite3_result_object(runtime, rows, columns, column_tables);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "querySingle")) {
         if (argc < 1) {
@@ -269085,7 +269465,7 @@ static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, &sqlite->db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, line);
+        int row_count = ptn_db_query(runtime, &sqlite->db, sql_copy, ptn_array_from_literal_entries(0, NULL), &rows, &columns, &column_tables, &error_message, "SQLite3::querySingle", line, NULL);
         free(sql_copy);
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             PtnValue result = ptn_sqlite3_handle_query_error(runtime, sqlite, "querySingle", error_message, line);
@@ -269270,7 +269650,7 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
         PtnValue columns = ptn_array_from_literal_entries(0, NULL);
         PtnValue column_tables = ptn_array_from_literal_entries(0, NULL);
         char *error_message = NULL;
-        int row_count = ptn_db_query(runtime, &sqlite->db, statement->sql, statement->bound_values, &rows, &columns, &column_tables, &error_message, line);
+        int row_count = ptn_db_query(runtime, &sqlite->db, statement->sql, statement->bound_values, &rows, &columns, &column_tables, &error_message, "SQLite3Stmt::execute", line, NULL);
         if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
             PtnValue result = ptn_sqlite3_handle_query_error(runtime, sqlite, "execute", error_message, line);
             free(error_message);
@@ -269307,6 +269687,55 @@ static PtnValue ptn_sqlite3_result_row_array(PtnValue row, int mode) {
     return out;
 }
 
+static int ptn_sqlite3_result_rerun_before_fetch(
+    PtnRuntime *runtime,
+    PtnSqlite3ResultData *result_data,
+    const char *operation_name,
+    size_t line
+) {
+    if (result_data == NULL || !result_data->rerun_before_fetch) {
+        return 1;
+    }
+    result_data->rerun_before_fetch = 0;
+    PtnSqlite3Data *sqlite = ptn_sqlite3_data(result_data->db);
+    if (sqlite == NULL || result_data->sql == NULL) {
+        return 1;
+    }
+    PtnValue rows = ptn_null();
+    PtnValue columns = ptn_null();
+    PtnValue column_tables = ptn_null();
+    char *error_message = NULL;
+    int row_count = ptn_db_query(
+        runtime,
+        &sqlite->db,
+        result_data->sql,
+        result_data->bound_values,
+        &rows,
+        &columns,
+        &column_tables,
+        &error_message,
+        operation_name,
+        line,
+        NULL
+    );
+    if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
+        free(error_message);
+        ptn_value_destroy(&rows);
+        ptn_value_destroy(&columns);
+        ptn_value_destroy(&column_tables);
+        return 0;
+    }
+    free(error_message);
+    ptn_value_destroy(&result_data->rows);
+    ptn_value_destroy(&result_data->columns);
+    ptn_value_destroy(&result_data->column_tables);
+    result_data->rows = rows;
+    result_data->columns = columns;
+    result_data->column_tables = column_tables;
+    result_data->cursor = 0;
+    return 1;
+}
+
 static PtnValue ptn_sqlite3_result_fetch_next(
     PtnRuntime *runtime,
     PtnSqlite3ResultData *result_data,
@@ -269314,6 +269743,12 @@ static PtnValue ptn_sqlite3_result_fetch_next(
     int mode,
     size_t line
 ) {
+    const char *operation_name = ptn_ascii_case_equal(method_name, "fetchAll")
+        ? "SQLite3Result::fetchAll"
+        : "SQLite3Result::fetchArray";
+    if (!ptn_sqlite3_result_rerun_before_fetch(runtime, result_data, operation_name, line)) {
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
     if (result_data->rows.type != PTN_ARRAY || result_data->cursor >= result_data->rows.as.array->len) {
         if (result_data->fetch_error_message != NULL) {
             char warning[256];
@@ -269370,17 +269805,45 @@ static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     }
     if (ptn_ascii_case_equal(name, "fetchArray")) {
         int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "SQLite3Result::fetchArray", 1, "mode", args[0], line) : PTN_SQLITE3_BOTH;
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (result_data->finalized) {
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "The SQLite3Result object has not been correctly initialised or is already closed"
+            );
+            return ptn_null();
+        }
         return ptn_sqlite3_result_fetch_next(runtime, result_data, "fetchArray", mode, line);
     }
     if (ptn_ascii_case_equal(name, "fetchAll")) {
         int mode = argc >= 1 ? (int)ptn_db_int_arg(runtime, "SQLite3Result::fetchAll", 1, "mode", args[0], line) : PTN_SQLITE3_BOTH;
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (result_data->finalized) {
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "The SQLite3Result object has not been correctly initialised or is already closed"
+            );
+            return ptn_null();
+        }
         return ptn_sqlite3_result_fetch_all(runtime, result_data, mode, line);
     }
     if (ptn_ascii_case_equal(name, "finalize")) {
         result_data->finalized = 1;
+        result_data->rerun_before_fetch = 0;
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "reset")) {
+        if (result_data->rerun_on_reset) {
+            result_data->rerun_before_fetch = 1;
+            result_data->cursor = 0;
+            return ptn_bool(1);
+        }
         if (result_data->sql != NULL) {
             PtnSqlite3Data *sqlite = ptn_sqlite3_data(result_data->db);
             if (sqlite != NULL) {
@@ -269397,7 +269860,9 @@ static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
                     &columns,
                     &column_tables,
                     &error_message,
-                    line
+                    "SQLite3Result::reset",
+                    line,
+                    NULL
                 );
                 if (row_count < 0 || runtime->exceptions->active_exception != NULL) {
                     PtnValue handled = ptn_sqlite3_handle_query_error(runtime, sqlite, "reset", error_message, line);
@@ -303902,10 +304367,17 @@ static PtnValue ptn_internal_get_class_methods(PtnRuntime *runtime, size_t argc,
     }
 
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
-    PtnValue result = (ptn_declared_class_exists(resolved_class_name) ||
-                       ptn_declared_interface_exists(resolved_class_name))
+    int declared_target = ptn_declared_class_exists(resolved_class_name) ||
+        ptn_declared_interface_exists(resolved_class_name);
+    PtnValue result = declared_target
         ? ptn_declared_class_method_names(runtime, resolved_class_name, access_scope)
         : ptn_internal_class_method_names(runtime, resolved_class_name);
+    if (declared_target &&
+        ptn_declared_class_is_same_or_descendant(resolved_class_name, "SQLite3")) {
+        PtnValue inherited = ptn_internal_class_method_names(runtime, "SQLite3");
+        ptn_append_unique_method_names(result, inherited);
+        ptn_value_destroy(&inherited);
+    }
     free(owned_class_name);
     return result;
 }
