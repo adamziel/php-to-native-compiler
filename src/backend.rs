@@ -33412,8 +33412,10 @@ fn emit_instruction(
                 } else {
                     emit_array_path_segments(out, values, dimensions)
                 };
-                let pre_value_root = if value_may_emit_undefined_variable_warning
-                    || !path.deferred_undefined_variable_warnings.is_empty()
+                let is_globals_array = array == "GLOBALS";
+                let pre_value_root = if !is_globals_array
+                    && (value_may_emit_undefined_variable_warning
+                        || !path.deferred_undefined_variable_warnings.is_empty())
                 {
                     let root_lookup_temp = values.next_temp();
                     let root_temp = values.next_temp();
@@ -33458,7 +33460,8 @@ fn emit_instruction(
                 out.push('(');
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                let post_value_root = if pre_value_root.is_none()
+                let post_value_root = if !is_globals_array
+                    && pre_value_root.is_none()
                     && (!path.deferred_undefined_variable_warnings.is_empty()
                         || dimensions_may_emit_key_conversion_diagnostic)
                 {
@@ -49015,8 +49018,10 @@ impl ValueEmitter {
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
-            let pre_value_root = if value_may_emit_undefined_variable_warning
-                || !path.deferred_undefined_variable_warnings.is_empty()
+            let is_globals_array = array == "GLOBALS";
+            let pre_value_root = if !is_globals_array
+                && (value_may_emit_undefined_variable_warning
+                    || !path.deferred_undefined_variable_warnings.is_empty())
             {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
@@ -49058,7 +49063,8 @@ impl ValueEmitter {
             out.push('(');
             out.push_str(&value_temp);
             out.push_str(");\n");
-            let post_value_root = if pre_value_root.is_none()
+            let post_value_root = if !is_globals_array
+                && pre_value_root.is_none()
                 && (!path.deferred_undefined_variable_warnings.is_empty()
                     || dimensions_may_emit_key_conversion_diagnostic)
             {
