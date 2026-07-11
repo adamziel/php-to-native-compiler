@@ -241359,6 +241359,7 @@ static void ptn_soap_append_response_value_xml(
     PtnStringBuffer *buffer,
     const char *name,
     PtnValue value,
+    PtnValue options,
     size_t line,
     size_t depth
 );
@@ -241368,6 +241369,7 @@ static void ptn_soap_append_response_array_xml(
     PtnStringBuffer *buffer,
     const char *name,
     PtnValue value,
+    PtnValue options,
     size_t line
 );
 
@@ -241375,6 +241377,7 @@ static void ptn_soap_append_response_object_fields(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
     PtnValue value,
+    PtnValue options,
     size_t line,
     size_t depth
 ) {
@@ -241391,7 +241394,7 @@ static void ptn_soap_append_response_object_fields(
         if (name == NULL) {
             continue;
         }
-        ptn_soap_append_response_value_xml(runtime, buffer, name, entry->value, line, depth + 1);
+        ptn_soap_append_response_value_xml(runtime, buffer, name, entry->value, options, line, depth + 1);
         free(name);
         if (runtime->exceptions->active_exception != NULL) {
             return;
@@ -241404,6 +241407,7 @@ static void ptn_soap_append_response_schema_object_fields(
     PtnStringBuffer *buffer,
     const PtnSoapType *type,
     PtnValue value,
+    PtnValue options,
     size_t line,
     size_t depth
 ) {
@@ -241420,7 +241424,7 @@ static void ptn_soap_append_response_schema_object_fields(
         if (!ptn_soap_object_schema_property(runtime, value, field->name, line, &field_value, &field_owned)) {
             continue;
         }
-        ptn_soap_append_response_value_xml(runtime, buffer, field->name, field_value, line, depth + 1);
+        ptn_soap_append_response_value_xml(runtime, buffer, field->name, field_value, options, line, depth + 1);
         if (field_owned) {
             ptn_value_destroy(&field_value);
         }
@@ -241538,12 +241542,31 @@ static void ptn_soap_append_response_value_xml(
     PtnStringBuffer *buffer,
     const char *name,
     PtnValue value,
+    PtnValue options,
     size_t line,
     size_t depth
 ) {
     value = ptn_value_deref(value);
+    if (ptn_soap_value_is_class(value, "SoapVar")) {
+        PtnValue encoded = ptn_null();
+        (void)ptn_soap_object_property(value, "enc_value", &encoded);
+        char *type_name = ptn_soap_property_string_or_null(runtime, value, "enc_stype", line);
+        char *type_ns = ptn_soap_property_string_or_null(runtime, value, "enc_ns", line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(type_name);
+            free(type_ns);
+            return;
+        }
+        if (ptn_soap_append_typemap_xml(runtime, buffer, options, type_name, type_ns, encoded, line)) {
+            free(type_name);
+            free(type_ns);
+            return;
+        }
+        free(type_name);
+        free(type_ns);
+    }
     if (value.type == PTN_ARRAY && value.as.array != NULL) {
-        ptn_soap_append_response_array_xml(runtime, buffer, name, value, line);
+        ptn_soap_append_response_array_xml(runtime, buffer, name, value, options, line);
         return;
     }
     ptn_string_buffer_append_char(buffer, '<');
@@ -241557,7 +241580,7 @@ static void ptn_soap_append_response_value_xml(
             ? "SOAPStructStruct"
             : "SOAPStruct";
         ptn_string_buffer_append_format(buffer, " xsi:type=\"ns2:%s\">", type_name);
-        ptn_soap_append_response_object_fields(runtime, buffer, value, line, depth + 1);
+        ptn_soap_append_response_object_fields(runtime, buffer, value, options, line, depth + 1);
     } else {
         const char *xsd_type = ptn_ascii_case_equal(name == NULL ? "" : name, "varInt")
             ? "int"
@@ -241577,6 +241600,7 @@ static void ptn_soap_append_response_array_xml(
     PtnStringBuffer *buffer,
     const char *name,
     PtnValue value,
+    PtnValue options,
     size_t line
 ) {
     value = ptn_value_deref(value);
@@ -241650,7 +241674,7 @@ static void ptn_soap_append_response_array_xml(
     );
     for (size_t i = 0; i < count; i++) {
         ptn_string_buffer_append(buffer, "<item xsi:type=\"ns2:SOAPStruct\">");
-        ptn_soap_append_response_object_fields(runtime, buffer, value.as.array->entries[i].value, line, 0);
+        ptn_soap_append_response_object_fields(runtime, buffer, value.as.array->entries[i].value, options, line, 0);
         ptn_string_buffer_append(buffer, "</item>");
         if (runtime->exceptions->active_exception != NULL) {
             return;
@@ -241665,6 +241689,7 @@ static void ptn_soap_append_response_named_parts_xml(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
     PtnValue value,
+    PtnValue options,
     size_t line
 ) {
     value = ptn_value_deref(value);
@@ -241676,7 +241701,7 @@ static void ptn_soap_append_response_named_parts_xml(
         if (entry->key.type != PTN_ARRAY_KEY_STRING || entry->key.as.string == NULL) {
             continue;
         }
-        ptn_soap_append_response_value_xml(runtime, buffer, entry->key.as.string, entry->value, line, 0);
+        ptn_soap_append_response_value_xml(runtime, buffer, entry->key.as.string, entry->value, options, line, 0);
         if (runtime->exceptions->active_exception != NULL) {
             return;
         }
@@ -241782,6 +241807,7 @@ static void ptn_soap_append_soap12_response_array_xml(
                     buffer,
                     struct_type,
                     value.as.array->entries[i].value,
+                    ptn_null(),
                     line,
                     0
                 );
@@ -241790,6 +241816,7 @@ static void ptn_soap_append_soap12_response_array_xml(
                     runtime,
                     buffer,
                     value.as.array->entries[i].value,
+                    ptn_null(),
                     line,
                     0
                 );
@@ -241880,7 +241907,7 @@ static void ptn_soap_append_soap12_response_schema_value_xml(
             ? "SOAPStructStruct"
             : "SOAPStruct";
         ptn_string_buffer_append_format(buffer, " xsi:type=\"ns2:%s\">", object_type);
-        ptn_soap_append_response_object_fields(runtime, buffer, value, line, depth + 1);
+        ptn_soap_append_response_object_fields(runtime, buffer, value, ptn_null(), line, depth + 1);
     } else {
         const char *xsd_type = type_local[0] == '\0'
             ? ptn_soap_xsd_type_for_value(value)
@@ -241995,7 +242022,7 @@ static void ptn_soap_emit_soap12_document_response(
         ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
         ptn_string_buffer_append_char(&buffer, '>');
         if (resolved.type == PTN_ARRAY) {
-            ptn_soap_append_response_named_parts_xml(runtime, &buffer, result, line);
+            ptn_soap_append_response_named_parts_xml(runtime, &buffer, result, data == NULL ? ptn_null() : data->options, line);
         } else {
             const char *xsd_type = ptn_soap_xsd_type_for_value(result);
             ptn_soap_append_scalar_value(runtime, &buffer, result, xsd_type, line);
@@ -242244,7 +242271,7 @@ static void ptn_soap_emit_soap12_rpc_response(
             ptn_string_buffer_append(&buffer, element_name);
             ptn_string_buffer_append_char(&buffer, '>');
         } else {
-            ptn_soap_append_response_value_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, line, 0);
+            ptn_soap_append_response_value_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, data == NULL ? ptn_null() : data->options, line, 0);
         }
         free(response_type_name);
     }
@@ -242494,7 +242521,7 @@ static void ptn_soap_emit_document_literal_response(
                 line
             );
         } else if (resolved_result.type == PTN_ARRAY) {
-            ptn_soap_append_response_named_parts_xml(runtime, &inner, result, line);
+            ptn_soap_append_response_named_parts_xml(runtime, &inner, result, data == NULL ? ptn_null() : data->options, line);
         } else {
             const char *xsd_type = ptn_soap_xsd_type_for_value(result);
             ptn_soap_append_scalar_value(runtime, &inner, result, xsd_type, line);
@@ -242741,9 +242768,9 @@ static void ptn_soap_emit_response(
         ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
         ptn_string_buffer_append(&buffer, "Response>");
         if (response_is_list) {
-            ptn_soap_append_response_array_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, line);
+            ptn_soap_append_response_array_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, data == NULL ? ptn_null() : data->options, line);
         } else {
-            ptn_soap_append_response_named_parts_xml(runtime, &buffer, result, line);
+            ptn_soap_append_response_named_parts_xml(runtime, &buffer, result, data == NULL ? ptn_null() : data->options, line);
         }
         ptn_string_buffer_append(&buffer, "</ns1:");
         ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
@@ -242783,13 +242810,39 @@ static void ptn_soap_emit_response(
         const char *response_type_ns = schema_type == NULL ? NULL : schema_type->namespace_uri;
         PtnStringBuffer typemap_xml;
         ptn_string_buffer_init(&typemap_xml);
+        PtnValue typemap_value = result;
+        const char *typemap_type_name = response_type_name;
+        const char *typemap_type_ns = response_type_ns;
+        char *soapvar_type_name = NULL;
+        char *soapvar_type_ns = NULL;
+        if (ptn_soap_value_is_class(result, "SoapVar")) {
+            (void)ptn_soap_object_property(result, "enc_value", &typemap_value);
+            soapvar_type_name = ptn_soap_property_string_or_null(runtime, result, "enc_stype", line);
+            soapvar_type_ns = ptn_soap_property_string_or_null(runtime, result, "enc_ns", line);
+            if (runtime->exceptions->active_exception != NULL) {
+                free(soapvar_type_name);
+                free(soapvar_type_ns);
+                free(typemap_xml.data);
+                free(response_type_name);
+                for (size_t i = 0; i < type_count; i++) {
+                    ptn_soap_type_free(&types[i]);
+                }
+                free(types);
+                return;
+            }
+            typemap_value = ptn_value_deref(typemap_value);
+            if (soapvar_type_name != NULL) {
+                typemap_type_name = soapvar_type_name;
+                typemap_type_ns = soapvar_type_ns;
+            }
+        }
         if (ptn_soap_append_typemap_xml(
                 runtime,
                 &typemap_xml,
                 data == NULL ? ptn_null() : data->options,
-                response_type_name,
-                response_type_ns,
-                result,
+                typemap_type_name,
+                typemap_type_ns,
+                typemap_value,
                 line
             )) {
             if (runtime->exceptions->active_exception == NULL) {
@@ -242810,6 +242863,8 @@ static void ptn_soap_emit_response(
                 free(buffer.data);
             }
             free(typemap_xml.data);
+            free(soapvar_type_name);
+            free(soapvar_type_ns);
             free(response_type_name);
             for (size_t i = 0; i < type_count; i++) {
                 ptn_soap_type_free(&types[i]);
@@ -242817,6 +242872,8 @@ static void ptn_soap_emit_response(
             free(types);
             return;
         }
+        free(soapvar_type_name);
+        free(soapvar_type_ns);
         free(typemap_xml.data);
         if (schema_type != NULL && schema_type->is_array) {
             int array_value_owned = 0;
@@ -242933,12 +242990,12 @@ static void ptn_soap_emit_response(
                 line
             );
             ptn_string_buffer_append_format(&buffer, " xsi:type=\"ns2:%s\">", schema_type->name);
-            ptn_soap_append_response_schema_object_fields(runtime, &buffer, schema_type, result, line, 0);
+            ptn_soap_append_response_schema_object_fields(runtime, &buffer, schema_type, result, data == NULL ? ptn_null() : data->options, line, 0);
             ptn_string_buffer_append(&buffer, "</");
             ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
             ptn_string_buffer_append_char(&buffer, '>');
         } else {
-            ptn_soap_append_response_value_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, line, 0);
+            ptn_soap_append_response_value_xml(runtime, &buffer, return_name == NULL ? "return" : return_name, result, data == NULL ? ptn_null() : data->options, line, 0);
         }
         ptn_string_buffer_append(&buffer, "</ns1:");
         ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
