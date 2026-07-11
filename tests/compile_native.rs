@@ -137807,6 +137807,10 @@ $typed = parse_ini_string($ini, false, INI_SCANNER_TYPED);\n\
 foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $key) {\n\
     var_dump($typed[$key]);\n\
 }\n\
+$ops = parse_ini_string(\"8 [[] = !!$]\\n9 [[] = !$]\\n10 [[] = abc|def\\n11 [[] = ~0\", true, INI_SCANNER_TYPED);\n\
+foreach ([8, 9, 10, 11] as $key) {\n\
+    var_dump($ops[$key]['[']);\n\
+}\n\
 \n\
 $globRoot = __DIR__ . '/glob-root';\n\
 mkdir($globRoot);\n\
@@ -137844,6 +137848,10 @@ bool(false)\n\
 NULL\n\
 NULL\n\
 bool(true)\n\
+int(0)\n\
+int(1)\n\
+int(0)\n\
+int(-1)\n\
 dir5,file5\n\
 dir,dir5\n"
     );

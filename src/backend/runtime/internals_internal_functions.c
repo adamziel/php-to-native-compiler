@@ -139333,14 +139333,38 @@ static int ptn_ini_parse_integer_literal(PtnIniText text, int64_t *out) {
     return ok;
 }
 
-static int ptn_ini_eval_int_atom(PtnRuntime *runtime, PtnIniText text, int64_t *out) {
+static int ptn_ini_parse_atoi_operand(PtnIniText text, int64_t *out) {
+    text = ptn_ini_trim_text(text);
+    if (text.len == 0) {
+        *out = 0;
+        return 1;
+    }
+    char *copy = ptn_ini_duplicate_text(text);
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(copy, &end, 10);
+    if (end == copy) {
+        parsed = 0;
+    } else if (errno == ERANGE) {
+        parsed = parsed < 0 ? LLONG_MIN : LLONG_MAX;
+    }
+    *out = (int64_t)parsed;
+    free(copy);
+    return 1;
+}
+
+static int ptn_ini_eval_int_atom(PtnRuntime *runtime, PtnIniText text, int64_t *out, int coerce_strings) {
     text = ptn_ini_trim_text(text);
     if (text.len == 0) {
         return 0;
     }
-    int invert = 0;
-    while (text.len > 0 && text.data[0] == '~') {
-        invert = !invert;
+    size_t unary_count = 0;
+    char *unary_ops = text.len == 0 ? NULL : malloc(text.len);
+    if (text.len != 0 && unary_ops == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    while (text.len > 0 && (text.data[0] == '~' || text.data[0] == '!')) {
+        unary_ops[unary_count++] = text.data[0];
         text.data++;
         text.len--;
         text = ptn_ini_trim_text(text);
@@ -139358,15 +139382,22 @@ static int ptn_ini_eval_int_atom(PtnRuntime *runtime, PtnIniText text, int64_t *
         if (parsed_float_ok) {
             free(numeric_copy);
             value = (int64_t)parsed_float;
-            *out = invert ? ~value : value;
-            return 1;
+            goto apply_unary;
         }
         free(numeric_copy);
         char *name = ptn_ini_duplicate_text(text);
         PtnValue constant;
         if (!ptn_runtime_constant_value(runtime, name, &constant)) {
             free(name);
-            return 0;
+            if (!coerce_strings) {
+                free(unary_ops);
+                return 0;
+            }
+            if (!ptn_ini_parse_atoi_operand(text, &value)) {
+                free(unary_ops);
+                return 0;
+            }
+            goto apply_unary;
         }
         PtnValue resolved = ptn_value_deref(constant);
         if (resolved.type == PTN_INT) {
@@ -139375,21 +139406,35 @@ static int ptn_ini_eval_int_atom(PtnRuntime *runtime, PtnIniText text, int64_t *
             value = resolved.as.boolean ? 1 : 0;
         } else {
             PtnStringOperand operand = ptn_value_to_string_operand(resolved);
-            int ok = ptn_ini_parse_integer_literal(ptn_ini_text(operand.data, operand.len), &value);
+            int ok = coerce_strings
+                ? ptn_ini_parse_atoi_operand(ptn_ini_text(operand.data, operand.len), &value)
+                : ptn_ini_parse_integer_literal(ptn_ini_text(operand.data, operand.len), &value);
             ptn_string_operand_free(operand);
             if (!ok) {
                 free(name);
+                free(unary_ops);
                 return 0;
             }
         }
         free(name);
     }
-    *out = invert ? ~value : value;
+apply_unary:
+    while (unary_count > 0) {
+        char op = unary_ops[--unary_count];
+        value = op == '~' ? ~value : !value;
+    }
+    free(unary_ops);
+    *out = value;
     return 1;
 }
 
 static int ptn_ini_eval_int_expression(PtnRuntime *runtime, PtnIniText text, int64_t *out) {
     int has_operator = 0;
+    PtnIniText trimmed_expression = ptn_ini_trim_text(text);
+    if (trimmed_expression.len > 0 &&
+        (trimmed_expression.data[0] == '!' || trimmed_expression.data[0] == '~')) {
+        has_operator = 1;
+    }
     for (size_t i = 0; i < text.len; i++) {
         if (text.data[i] == '&' || text.data[i] == '|' || text.data[i] == '^' || text.data[i] == '~') {
             has_operator = 1;
@@ -139409,7 +139454,7 @@ static int ptn_ini_eval_int_expression(PtnRuntime *runtime, PtnIniText text, int
         if (is_plain_float) {
             return 0;
         }
-        return ptn_ini_eval_int_atom(runtime, text, out);
+        return ptn_ini_eval_int_atom(runtime, text, out, 0);
     }
 
     size_t start = 0;
@@ -139423,7 +139468,7 @@ static int ptn_ini_eval_int_expression(PtnRuntime *runtime, PtnIniText text, int
         }
         PtnIniText atom = ptn_ini_trim_text(ptn_ini_text(text.data + start, i - start));
         int64_t value = 0;
-        if (!ptn_ini_eval_int_atom(runtime, atom, &value)) {
+        if (!ptn_ini_eval_int_atom(runtime, atom, &value, 1)) {
             return 0;
         }
         if (!have_value) {
