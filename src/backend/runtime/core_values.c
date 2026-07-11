@@ -40,6 +40,7 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <pthread.h>
 #include <regex.h>
 #include <resolv.h>
 #include <sys/file.h>

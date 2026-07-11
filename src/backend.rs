@@ -410,7 +410,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         out.push_str("static void ptn_runtime_auto_start_session(PtnRuntime *runtime);\n");
     }
-    out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
+    out.push_str("\nstatic int ptn_program_main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
     out.push_str("    ptn_request_allocator_begin(runtime.memory_limit);\n");
@@ -787,7 +787,67 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
+    emit_native_main_trampoline(&mut out);
     out
+}
+
+fn emit_native_main_trampoline(out: &mut String) {
+    out.push_str(
+        "\n#if defined(_WIN32)\n\
+int main(int ptn_native_argc, char **ptn_native_argv) {\n\
+    return ptn_program_main(ptn_native_argc, ptn_native_argv);\n\
+}\n\
+#else\n\
+typedef struct {\n\
+    int argc;\n\
+    char **argv;\n\
+    int result;\n\
+} PtnNativeMainArgs;\n\
+\n\
+static void *ptn_program_main_thread(void *opaque) {\n\
+    PtnNativeMainArgs *args = (PtnNativeMainArgs *)opaque;\n\
+    args->result = ptn_program_main(args->argc, args->argv);\n\
+    return NULL;\n\
+}\n\
+\n\
+int main(int ptn_native_argc, char **ptn_native_argv) {\n\
+    size_t stack_size = 64U * 1024U * 1024U;\n\
+    const char *raw_stack_size = getenv(\"PTN_NATIVE_STACK_SIZE\");\n\
+    if (raw_stack_size != NULL && raw_stack_size[0] != '\\0') {\n\
+        errno = 0;\n\
+        char *end = NULL;\n\
+        unsigned long long parsed = strtoull(raw_stack_size, &end, 0);\n\
+        if (end != raw_stack_size && errno != ERANGE && parsed > 0 && parsed <= (unsigned long long)SIZE_MAX) {\n\
+            stack_size = (size_t)parsed;\n\
+        }\n\
+    }\n\
+#ifdef PTHREAD_STACK_MIN\n\
+    if (stack_size < (size_t)PTHREAD_STACK_MIN) {\n\
+        stack_size = (size_t)PTHREAD_STACK_MIN;\n\
+    }\n\
+#endif\n\
+    pthread_attr_t attr;\n\
+    int have_attr = pthread_attr_init(&attr) == 0;\n\
+    if (have_attr && pthread_attr_setstacksize(&attr, stack_size) != 0) {\n\
+        pthread_attr_destroy(&attr);\n\
+        have_attr = 0;\n\
+    }\n\
+    PtnNativeMainArgs args = { ptn_native_argc, ptn_native_argv, 255 };\n\
+    pthread_t thread;\n\
+    int created = pthread_create(&thread, have_attr ? &attr : NULL, ptn_program_main_thread, &args);\n\
+    if (have_attr) {\n\
+        pthread_attr_destroy(&attr);\n\
+    }\n\
+    if (created != 0) {\n\
+        return ptn_program_main(ptn_native_argc, ptn_native_argv);\n\
+    }\n\
+    if (pthread_join(thread, NULL) != 0) {\n\
+        return 255;\n\
+    }\n\
+    return args.result;\n\
+}\n\
+#endif\n",
+    );
 }
 
 fn emit_opcache_optimizer_dump_helpers(out: &mut String) {
@@ -44522,6 +44582,9 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     for arg in optimization_args {
         command.arg(arg);
     }
+    if cfg!(target_family = "unix") {
+        command.arg("-pthread");
+    }
     let status = command
         .arg(&c_path)
         .arg("-o")
@@ -44583,6 +44646,9 @@ fn compile_c_with_ada_url(
     for arg in optimization_args {
         c_command.arg(arg);
     }
+    if cfg!(target_family = "unix") {
+        c_command.arg("-pthread");
+    }
     let c_status = c_command
         .arg("-I")
         .arg(&ada_dir)
@@ -44609,6 +44675,9 @@ fn compile_c_with_ada_url(
         .arg("-DADA_INCLUDE_URL_PATTERN=0");
     for arg in optimization_args {
         ada_command.arg(arg);
+    }
+    if cfg!(target_family = "unix") {
+        ada_command.arg("-pthread");
     }
     let ada_status = ada_command
         .arg("-I")
@@ -44639,6 +44708,9 @@ fn compile_c_with_ada_url(
         .arg(output);
     if cfg!(target_os = "linux") {
         link_command.arg("-ldl");
+    }
+    if cfg!(target_family = "unix") {
+        link_command.arg("-pthread");
     }
     if let Some(config) = openssl_config {
         link_command.args(openssl_link_args(config));
