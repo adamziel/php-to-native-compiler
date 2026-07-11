@@ -49261,6 +49261,22 @@ impl ValueEmitter {
 
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let value_temp = self.emit_materialized_value(out, value);
+                if matches!(compound_op, BinaryOp::Concat) {
+                    let assigned_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&assigned_temp);
+                    out.push_str(" = ptn_concat_assign_variable(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &value_temp);
+                    return assigned_temp;
+                }
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);

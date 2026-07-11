@@ -1174,6 +1174,86 @@ static PTN_UNUSED PtnValue ptn_concat_assign(
     return ptn_owned_string_len(joined, joined_len);
 }
 
+static PTN_UNUSED PtnValue ptn_concat_assign_variable_fallback_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnValue right,
+    const char *path,
+    size_t line
+) {
+    PtnValue current = ptn_value_clone_deref(
+        ptn_runtime_read_variable_len(runtime, name, name_len, path, line)
+    );
+    PtnValue result = ptn_concat_assign(runtime, current, right, line);
+    PtnValue assigned = ptn_null();
+    if (!ptn_runtime_has_active_exception(runtime)) {
+        assigned = ptn_runtime_write_variable_result_len(runtime, name, name_len, result);
+    } else {
+        assigned = ptn_value_clone_deref(current);
+    }
+    ptn_value_destroy(&current);
+    ptn_value_destroy(&result);
+    return assigned;
+}
+
+static PTN_UNUSED PtnValue ptn_concat_assign_variable_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnValue right,
+    const char *path,
+    size_t line
+) {
+    if (ptn_runtime_has_active_exception(runtime)) {
+        return ptn_concat_assign_variable_fallback_len(runtime, name, name_len, right, path, line);
+    }
+
+    PtnValue right_resolved = ptn_value_deref(right);
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table_len(runtime, name, name_len);
+    PtnValue *slot = ptn_symbols_get_slot_len(symbols, name, name_len);
+    if (slot == NULL ||
+        slot->type == PTN_REFERENCE ||
+        slot->type != PTN_STRING ||
+        right_resolved.type != PTN_STRING) {
+        return ptn_concat_assign_variable_fallback_len(runtime, name, name_len, right, path, line);
+    }
+
+    size_t left_len = slot->as.string.len;
+    size_t right_len = right_resolved.as.string.len;
+    if (left_len > SIZE_MAX - right_len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t joined_len = left_len + right_len;
+    ptn_concat_enforce_memory_limit(runtime, joined_len, line);
+    if (ptn_runtime_has_active_exception(runtime)) {
+        return ptn_value_clone_deref(*slot);
+    }
+
+    PtnStringOperand right_string = ptn_string_operand_owned_len(
+        ptn_duplicate_string_len((const char *)right_resolved.as.string.data, right_len),
+        right_len
+    );
+    ptn_value_detach_for_write(slot);
+    ptn_string_value_resize(slot, joined_len);
+    memcpy(slot->as.string.payload->data + left_len, right_string.data, right_len);
+    slot->as.string.payload->interned = 0;
+    ptn_string_value_refresh(slot);
+    symbols->mutation_epoch++;
+    ptn_string_operand_free(right_string);
+    return ptn_value_clone_deref(*slot);
+}
+
+static PTN_UNUSED PtnValue ptn_concat_assign_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue right,
+    const char *path,
+    size_t line
+) {
+    return ptn_concat_assign_variable_len(runtime, name, strlen(name), right, path, line);
+}
+
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
