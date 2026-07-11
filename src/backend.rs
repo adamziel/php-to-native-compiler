@@ -31238,7 +31238,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String, full_internal_
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_dynamic_call_throw_if_forbidden(PtnRuntime *runtime, const char *name, size_t line) {\n",
+        "\nstatic PTN_UNUSED int ptn_dynamic_call_throw_if_forbidden(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    if (!ptn_dynamic_call_forbidden_name(name)) {\n");
     out.push_str("        return 0;\n");
@@ -31252,11 +31252,23 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String, full_internal_
     out.push_str("    }\n");
     out.push_str("    char message[160];\n");
     out.push_str(
-        "    snprintf(message, sizeof(message), \"Cannot call %s() dynamically\", name);\n",
+        "    int written = snprintf(message, sizeof(message), \"Cannot call %s() dynamically\", name);\n",
     );
-    out.push_str(
-        "    ptn_throw_exception_at(runtime, \"Error\", message, ptn_runtime_internal_call_path(runtime, line), line);\n",
-    );
+    out.push_str("    if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnTraceFrame trace_frame;\n");
+    out.push_str("    ptn_runtime_push_trace_frame(runtime, &trace_frame, name, ptn_runtime_internal_trace_file(runtime, line), line, argc, args);\n");
+    out.push_str("    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());\n");
+    out.push_str("    PtnException *exception = ptn_exception_new_owned(runtime, \"Error\", ptn_duplicate_string(message), strlen(message), 0, previous, PTN_E_ERROR, ptn_runtime_internal_call_path(runtime, line), line);\n");
+    out.push_str("    ptn_runtime_pop_trace_frame(runtime, &trace_frame);\n");
+    out.push_str("    ptn_runtime_replace_active_exception(runtime, exception);\n");
+    out.push_str("    if (runtime->exceptions->try_frame != NULL) {\n");
+    out.push_str("        longjmp(runtime->exceptions->try_frame->jump, 1);\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);\n");
+    out.push_str("    ptn_runtime_shutdown_before_exit(runtime);\n");
+    out.push_str("    exit(255);\n");
     out.push_str("    return 1;\n");
     out.push_str("}\n");
 }
@@ -31273,7 +31285,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
         "    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n",
     );
     out.push_str(
-        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, line)) {\n",
+        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, argc, args, line)) {\n",
     );
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
@@ -32047,7 +32059,7 @@ fn emit_callable_dispatch(
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
     out.push_str(
-        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, line)) {\n",
+        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, argc, args, line)) {\n",
     );
     out.push_str("        free(name);\n");
     out.push_str("        return ptn_null();\n");
