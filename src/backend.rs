@@ -48367,6 +48367,23 @@ impl ValueEmitter {
             return self.emit_materialized_value(out, receiver);
         }
         match receiver {
+            ValueExpr::Load { name, .. } if name != "this" => {
+                let lookup_temp = self.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists ? ");
+                out.push_str(&lookup_temp);
+                out.push_str(".value : ptn_null();\n");
+                result_temp
+            }
             ValueExpr::PropertyFetch {
                 receiver,
                 name,
