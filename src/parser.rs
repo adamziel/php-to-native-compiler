@@ -10786,21 +10786,24 @@ impl Parser<'_> {
         terminator: TokenKind,
     ) -> Result<(Vec<ArrayElement>, SourceSpan)> {
         let mut elements = Vec::new();
+        let mut previous_separator_span = None;
         while !self.at_array_terminator(&terminator) {
             if matches!(self.peek().kind, TokenKind::Comma) {
-                let span = self.advance().span;
+                let comma_span = self.advance().span;
+                let span = previous_separator_span.unwrap_or(comma_span);
                 elements.push(ArrayElement {
                     key: None,
                     value: ArrayElementValue::Hole(span),
                     line: span.line,
                 });
+                previous_separator_span = Some(comma_span);
                 continue;
             }
             elements.push(self.parse_array_element(&terminator)?);
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
-            self.advance();
+            previous_separator_span = Some(self.advance().span);
             if self.at_array_terminator(&terminator) {
                 break;
             }
