@@ -33339,7 +33339,9 @@ fn emit_instruction(
                 } else {
                     emit_array_path_segments(out, values, dimensions)
                 };
-                let pre_value_root = if value_may_emit_undefined_variable_warning {
+                let pre_value_root = if value_may_emit_undefined_variable_warning
+                    || !path.deferred_undefined_variable_warnings.is_empty()
+                {
                     let root_lookup_temp = values.next_temp();
                     let root_temp = values.next_temp();
                     let root_epoch_temp = values.next_temp();
@@ -33367,6 +33369,7 @@ fn emit_instruction(
                 } else {
                     None
                 };
+                emit_deferred_undefined_variable_warnings(out, values, &path, *line);
                 let value_temp = values.emit_array_path_write_value(out, value);
                 let snapshot_temp = values.next_temp();
                 let snapshot_function = if matches!(value, ValueExpr::Load { name, .. } if name == array)
@@ -37377,6 +37380,49 @@ fn emit_deferred_missing_variable_null_key_deprecation_flag(
 ) {
     let _ = path;
     out.push('1');
+}
+
+fn emit_deferred_undefined_variable_warnings(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    path: &EmittedArrayPath,
+    line: usize,
+) {
+    if path.deferred_undefined_variable_warnings.is_empty() {
+        return;
+    }
+    let index_temp = values.next_temp();
+    out.push_str("    for (size_t ");
+    out.push_str(&index_temp);
+    out.push_str(" = 0; ");
+    out.push_str(&index_temp);
+    out.push_str(" < ");
+    out.push_str(&path.len.to_string());
+    out.push_str("; ");
+    out.push_str(&index_temp);
+    out.push_str("++) {\n");
+    out.push_str("        if (");
+    out.push_str(&path.name);
+    out.push('[');
+    out.push_str(&index_temp);
+    out.push_str("].deferred_missing_variable_name != NULL) {\n");
+    out.push_str("            ptn_array_path_emit_deferred_undefined_variable_warning(&runtime, &");
+    out.push_str(&path.name);
+    out.push('[');
+    out.push_str(&index_temp);
+    out.push_str("], ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str("            ");
+    out.push_str(&path.name);
+    out.push('[');
+    out.push_str(&index_temp);
+    out.push_str("].deferred_missing_variable_name = NULL;\n");
+    out.push_str("            if (runtime.exceptions->active_exception != NULL) {\n");
+    out.push_str("                ptn_rethrow_exception(&runtime);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
 }
 
 fn value_expr_is_direct_variable_read(value: &ValueExpr) -> bool {
@@ -48805,6 +48851,7 @@ impl ValueEmitter {
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
+            emit_deferred_undefined_variable_warnings(out, self, &path, *line);
             let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -48875,7 +48922,9 @@ impl ValueEmitter {
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
-            let pre_value_root = if value_may_emit_undefined_variable_warning {
+            let pre_value_root = if value_may_emit_undefined_variable_warning
+                || !path.deferred_undefined_variable_warnings.is_empty()
+            {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
                 let root_epoch_temp = self.next_temp();
@@ -48900,6 +48949,7 @@ impl ValueEmitter {
             } else {
                 None
             };
+            emit_deferred_undefined_variable_warnings(out, self, &path, *line);
             let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             let snapshot_function = if matches!(value, ValueExpr::Load { name, .. } if name == array)
