@@ -1117,7 +1117,17 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         PtnException *shutdown_entry_exception = runtime->exceptions == NULL
             ? NULL
             : runtime->exceptions->active_exception;
+        size_t shutdown_functions_before_header_callback = runtime->shutdown_functions_len;
         ptn_runtime_run_header_callback(runtime);
+        if (runtime->shutdown_functions_len > shutdown_functions_before_header_callback) {
+            for (size_t i = shutdown_functions_before_header_callback; i < runtime->shutdown_functions_len; i++) {
+                ptn_shutdown_function_destroy(&runtime->shutdown_functions[i]);
+            }
+            runtime->shutdown_functions_len = shutdown_functions_before_header_callback;
+            if (runtime->shutdown_function_index > runtime->shutdown_functions_len) {
+                runtime->shutdown_function_index = runtime->shutdown_functions_len;
+            }
+        }
         ptn_runtime_run_shutdown_functions(runtime);
         if (ptn_runtime_has_new_active_exception(runtime, shutdown_entry_exception)) {
             ptn_rethrow_exception(runtime);
