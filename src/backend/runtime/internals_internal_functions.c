@@ -241264,6 +241264,28 @@ static const char *ptn_soap_array_2d_scalar_xsd_type(
     return type;
 }
 
+static void ptn_soap_append_request_scalar_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    const char *xsd_type,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (ptn_soap_value_is_class(value, "SoapVar")) {
+        PtnValue encoded = ptn_null();
+        PtnValue encoded_type = ptn_null();
+        (void)ptn_soap_object_property(value, "enc_value", &encoded);
+        (void)ptn_soap_object_property(value, "enc_type", &encoded_type);
+        int64_t soap_type = ptn_value_to_integer(encoded_type);
+        if (soap_type != 300 && soap_type != 301) {
+            ptn_soap_append_scalar_value(runtime, buffer, encoded, xsd_type, line);
+            return;
+        }
+    }
+    ptn_soap_append_scalar_value(runtime, buffer, value, xsd_type, line);
+}
+
 static const char *ptn_soap_array2d_type_name_for_xsd(const char *xsd_type) {
     if (ptn_ascii_case_equal(xsd_type == NULL ? "" : xsd_type, "string")) {
         return "ArrayOfString2D";
@@ -245402,7 +245424,7 @@ static int ptn_soap_request_value_has_scalar_array(PtnValue value, size_t depth)
     if (value.type != PTN_ARRAY || value.as.array == NULL) {
         return 0;
     }
-    if (depth > 0 && ptn_soap_array_scalar_xsd_type(value) != NULL) {
+    if (depth > 0 && ptn_soap_request_array_scalar_xsd_type(value) != NULL) {
         return 1;
     }
     for (size_t i = 0; i < value.as.array->len; i++) {
@@ -245426,7 +245448,7 @@ static int ptn_soap_request_value_has_struct_array(PtnValue value, size_t depth)
     }
     if (depth > 0 &&
         value.as.array->len != 0 &&
-        ptn_soap_array_scalar_xsd_type(value) == NULL) {
+        ptn_soap_request_array_scalar_xsd_type(value) == NULL) {
         return 1;
     }
     for (size_t i = 0; i < value.as.array->len; i++) {
@@ -245802,7 +245824,7 @@ static void ptn_soap_append_request_value_element(
         size_t inner_count = 0;
         const char *nested_scalar_xsd_type =
             ptn_soap_array_2d_scalar_xsd_type(value, &outer_count, &inner_count);
-        const char *scalar_xsd_type = ptn_soap_array_scalar_xsd_type(value);
+        const char *scalar_xsd_type = ptn_soap_request_array_scalar_xsd_type(value);
         ptn_string_buffer_append_char(buffer, '<');
         ptn_string_buffer_append(buffer, element_name == NULL ? "param" : element_name);
         if (nested_scalar_xsd_type != NULL) {
@@ -245852,7 +245874,7 @@ static void ptn_soap_append_request_value_element(
             );
             for (size_t i = 0; i < value.as.array->len; i++) {
                 ptn_string_buffer_append_format(buffer, "<item xsi:type=\"xsd:%s\">", scalar_xsd_type);
-                ptn_soap_append_scalar_value(
+                ptn_soap_append_request_scalar_value(
                     runtime,
                     buffer,
                     value.as.array->entries[i].value,

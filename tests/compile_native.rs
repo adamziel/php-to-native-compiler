@@ -88288,6 +88288,56 @@ echo round2_server_response($wsdl, $wsdlClient->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_unknown_type_soapvar_array_request_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-unknown-type-soapvar-array-request");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-unknown-type-soapvar-array-request.php");
+    let output = root.join("soap-unknown-type-soapvar-array-request-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class TestSoapClient extends SoapClient {
+    public function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): ?string {
+        die($request);
+    }
+}
+
+$array = [new SoapVar('test string', NULL)];
+
+$client = new TestSoapClient(NULL, ['location' => 'test://', 'uri' => 'http://soapinterop.org/']);
+$client->echoStringArray($array);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("xmlns:ns1=\"http://soapinterop.org/\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<param0 SOAP-ENC:arrayType=\"xsd:string[1]\" xsi:type=\"SOAP-ENC:Array\"><item xsi:type=\"xsd:string\">test string</item></param0>"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("SOAP-ENC:Struct"), "{stdout}");
+    assert!(!stdout.contains("enc_value"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_request_array_scalar_xsd_type"));
+    assert!(c_source.contains("ptn_soap_append_request_scalar_value"));
+}
+
+#[test]
 fn compile_soap_typemap_to_xml_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-typemap-to-xml-response");
     fs::create_dir_all(&root).unwrap();
