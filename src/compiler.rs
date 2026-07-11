@@ -80,6 +80,7 @@ pub struct CompileSourceOptions {
     pub script_encoding: Option<String>,
     pub internal_encoding: Option<String>,
     pub encoding_translation: bool,
+    pub disabled_functions: HashSet<String>,
     pub force_internal_function_dispatch: bool,
     pub zend_test_observer_execute_internal: bool,
     pub zend_test_observer_show_return_value: bool,
@@ -166,6 +167,7 @@ fn compile_file_inner_with_source_options(
         &includes.runtime_class_aliases,
         &included_classes,
         &included_traits,
+        &source_options.disabled_functions,
         source_options.zend_multibyte,
         source_options.short_open_tag,
     )?;

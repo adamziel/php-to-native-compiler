@@ -82,6 +82,7 @@ pub(crate) fn parse_for_include_collection_with_multibyte(
         runtime_class_aliases,
         &[],
         &[],
+        &HashSet::new(),
         false,
         false,
         false,
@@ -99,6 +100,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
         runtime_class_aliases,
         &[],
         &[],
+        &HashSet::new(),
         true,
         true,
         false,
@@ -112,6 +114,7 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols_with_multibyte(
     runtime_class_aliases: &HashMap<String, String>,
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
+    disabled_functions: &HashSet<String>,
     zend_multibyte: bool,
     short_open_tag: bool,
 ) -> Result<Program> {
@@ -120,6 +123,7 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols_with_multibyte(
         runtime_class_aliases,
         external_classes,
         external_traits,
+        disabled_functions,
         true,
         true,
         false,
@@ -141,6 +145,7 @@ pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols_with_multibyt
         runtime_class_aliases,
         external_classes,
         external_traits,
+        &HashSet::new(),
         true,
         false,
         false,
@@ -154,6 +159,7 @@ fn parse_with_options(
     runtime_class_aliases: &HashMap<String, String>,
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
+    disabled_functions: &HashSet<String>,
     validate_method_signatures: bool,
     validate_function_names: bool,
     force_top_level_declarations_conditional: bool,
@@ -182,6 +188,7 @@ fn parse_with_options(
         runtime_class_aliases: runtime_class_aliases.clone(),
         external_classes: external_classes.to_vec(),
         external_traits: external_traits.to_vec(),
+        disabled_functions: disabled_functions.clone(),
         eval_string_constants: HashMap::new(),
         eval_scalar_variables: HashMap::new(),
         eval_visible_classes: external_classes.to_vec(),
@@ -265,6 +272,7 @@ struct Parser<'a> {
     runtime_class_aliases: HashMap<String, String>,
     external_classes: Vec<ClassDecl>,
     external_traits: Vec<TraitDecl>,
+    disabled_functions: HashSet<String>,
     eval_string_constants: HashMap<String, String>,
     eval_scalar_variables: HashMap<String, EvalScalarValue>,
     eval_visible_classes: Vec<ClassDecl>,
@@ -683,7 +691,7 @@ impl Parser<'_> {
             }
         }
         if self.validate_function_names {
-            validate_function_names(&functions)?;
+            validate_function_names(&functions, &self.disabled_functions)?;
         }
         validate_by_reference_returns(&functions)?;
         validate_void_returns(&functions)?;
@@ -6959,6 +6967,7 @@ impl Parser<'_> {
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
+            &self.disabled_functions,
             false,
             true,
             true,
@@ -7112,6 +7121,7 @@ impl Parser<'_> {
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
+            &self.disabled_functions,
             false,
             true,
             true,
@@ -7166,6 +7176,7 @@ impl Parser<'_> {
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
+            &self.disabled_functions,
             false,
             true,
             true,
@@ -9688,6 +9699,7 @@ impl Parser<'_> {
             runtime_class_aliases: self.runtime_class_aliases.clone(),
             external_classes: self.external_classes.clone(),
             external_traits: self.external_traits.clone(),
+            disabled_functions: self.disabled_functions.clone(),
             eval_string_constants: self.eval_string_constants.clone(),
             eval_scalar_variables: self.eval_scalar_variables.clone(),
             eval_visible_classes: self.eval_visible_classes.clone(),
@@ -24049,7 +24061,10 @@ fn reference_target_reference_to_variable(
     }
 }
 
-fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
+fn validate_function_names(
+    functions: &[FunctionDecl],
+    disabled_functions: &HashSet<String>,
+) -> Result<()> {
     let mut names: HashMap<String, SourceSpan> = HashMap::new();
     for function in functions {
         let lookup_name = function.name.to_ascii_lowercase();
@@ -24059,7 +24074,9 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
                 Some(function.span),
             ));
         }
-        if is_modeled_internal_function_name(&lookup_name) {
+        if is_modeled_internal_function_name(&lookup_name)
+            && !disabled_functions.contains(&lookup_name)
+        {
             return Err(Diagnostic::new(
                 format!("Cannot redeclare function {lookup_name}()"),
                 Some(function.span),

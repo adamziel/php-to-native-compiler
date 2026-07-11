@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::ffi::OsString;
 use std::fs;
@@ -1541,6 +1542,15 @@ fn ini_scalar_truthy(raw_value: &str) -> bool {
     )
 }
 
+fn disabled_function_names(raw_value: Option<&str>) -> HashSet<String> {
+    raw_value
+        .unwrap_or("")
+        .split(',')
+        .map(|name| name.trim().trim_start_matches('\\').to_ascii_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
 fn zend_ini_parse_bool(raw_value: &str) -> bool {
     let normalized = raw_value.trim();
     if normalized.eq_ignore_ascii_case("true")
@@ -2398,6 +2408,7 @@ fn compile_and_run(
             .mbstring_encoding_translation
             .as_deref()
             .is_some_and(ini_scalar_truthy),
+        disabled_functions: disabled_function_names(ini.disable_functions.as_deref()),
         short_open_tag: ini.short_open_tag.as_deref().is_some_and(ini_scalar_truthy),
         force_internal_function_dispatch: ini
             .output_handler
