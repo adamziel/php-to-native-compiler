@@ -1939,8 +1939,7 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         &runtime->diagnostics,
         message,
         line,
-        runtime != NULL &&
-            (runtime->suppress_user_call_frame_location || runtime->warn_by_ref_argument_mismatch)
+        runtime != NULL && runtime->suppress_user_call_frame_location
     );
     free(message);
 }

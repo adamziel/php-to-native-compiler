@@ -2129,7 +2129,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         message,
         path,
         line,
-        path == NULL
+        path == NULL && line == 0
     );
 }
 
