@@ -2891,6 +2891,20 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
+            if (ptn_generator_body_depth > 0 &&
+                ptn_function_body_depth >= ptn_generator_body_depth &&
+                line ~ /(^|[^[:alnum:]_$])fiber[[:space:]]*::[[:space:]]*suspend[[:space:]]*\(/ &&
+                !ptn_supported_generator_fiber_lifecycle_row()) {
+                ptn_generator_fiber_suspend_depth = ptn_function_body_depth
+            }
+            if (ptn_generator_fiber_suspend_depth > 0 &&
+                ptn_function_body_depth >= ptn_generator_fiber_suspend_depth &&
+                line ~ /(^|[^[:alnum:]_$])finally([^[:alnum:]_]|$)/ &&
+                !ptn_supported_generator_fiber_lifecycle_row()) {
+                print "unsupported-generator-lazy-suspension\trequires Fiber suspension inside a generator body and close-time cleanup ordering, outside PTN collected generator/Fiber runtime"
+                found = 1
+                exit
+            }
             if (ptn_has_direct_assignment_yield(line)) {
                 ptn_generator_assignment_yield_context = 1
             }
@@ -3008,6 +3022,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_generator_foreach_context = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
+                if (ptn_function_body_depth > 0 && ptn_generator_body_depth == 0) {
+                    ptn_generator_body_depth = ptn_function_body_depth
+                }
                 if (ptn_unbounded_generator_loop_depth > 0 &&
                     ptn_function_body_depth >= ptn_unbounded_generator_loop_depth) {
                     print "unsupported-generator-lazy-suspension\trequires lazy generator suspension for unbounded generator loops, outside PTN collected generator runtime"
@@ -3027,6 +3044,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 next
             }
             if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
+                if (ptn_function_body_depth > 0 && ptn_generator_body_depth == 0) {
+                    ptn_generator_body_depth = ptn_function_body_depth
+                }
                 if (ptn_unbounded_generator_loop_depth > 0 &&
                     ptn_function_body_depth >= ptn_unbounded_generator_loop_depth) {
                     print "unsupported-generator-lazy-suspension\trequires lazy generator suspension for unbounded generator loops, outside PTN collected generator runtime"
@@ -3066,6 +3086,14 @@ ptn_phpt_first_unsupported_language_surface() {
                 if (ptn_by_ref_function_body_depth > 0 &&
                     ptn_function_body_depth < ptn_by_ref_function_body_depth) {
                     ptn_by_ref_function_body_depth = 0
+                }
+                if (ptn_generator_body_depth > 0 &&
+                    ptn_function_body_depth < ptn_generator_body_depth) {
+                    ptn_generator_body_depth = 0
+                }
+                if (ptn_generator_fiber_suspend_depth > 0 &&
+                    ptn_function_body_depth < ptn_generator_fiber_suspend_depth) {
+                    ptn_generator_fiber_suspend_depth = 0
                 }
             }
             if (ptn_class_body_depth > 0 && ptn_line_close_braces > 0) {
