@@ -1885,6 +1885,15 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnV
     return ptn_multiply_with_diagnostics(runtime, left, right, line, 1, 0);
 }
 
+static PTN_UNUSED PtnValue ptn_multiply_preserving_order(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_multiply_with_diagnostics(runtime, left, right, line, 0, 1);
+}
+
 static PTN_UNUSED PtnValue ptn_multiply_assign(
     PtnRuntime *runtime,
     PtnValue left,
@@ -3155,6 +3164,15 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(
     return ptn_bitwise_and_with_diagnostics(runtime, left, right, line, 1, 0);
 }
 
+static PTN_UNUSED PtnValue ptn_bitwise_and_preserving_order(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_and_with_diagnostics(runtime, left, right, line, 0, 1);
+}
+
 static PTN_UNUSED PtnValue ptn_bitwise_and_assign(
     PtnRuntime *runtime,
     PtnValue left,
@@ -3215,6 +3233,15 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(
     return ptn_bitwise_or_with_diagnostics(runtime, left, right, line, 1, 0);
 }
 
+static PTN_UNUSED PtnValue ptn_bitwise_or_preserving_order(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_or_with_diagnostics(runtime, left, right, line, 0, 1);
+}
+
 static PTN_UNUSED PtnValue ptn_bitwise_or_assign(
     PtnRuntime *runtime,
     PtnValue left,
@@ -3273,6 +3300,15 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(
     size_t line
 ) {
     return ptn_bitwise_xor_with_diagnostics(runtime, left, right, line, 1, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_xor_preserving_order(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return ptn_bitwise_xor_with_diagnostics(runtime, left, right, line, 0, 1);
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_xor_assign(

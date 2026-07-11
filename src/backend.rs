@@ -44298,6 +44298,37 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
     }
 }
 
+fn binary_left_operand_preserves_operator_order(value: &ValueExpr) -> bool {
+    !matches!(
+        value,
+        ValueExpr::String(_)
+            | ValueExpr::Int(_)
+            | ValueExpr::Float(_)
+            | ValueExpr::Bool(_)
+            | ValueExpr::Null
+            | ValueExpr::Constant { .. }
+            | ValueExpr::MagicConstant { .. }
+            | ValueExpr::Array(_)
+    )
+}
+
+fn binary_runtime_function_for_operands(
+    op: BinaryOp,
+    left: &ValueExpr,
+    _right: &ValueExpr,
+) -> &'static str {
+    if binary_left_operand_preserves_operator_order(left) {
+        match op {
+            BinaryOp::Multiply => return "ptn_multiply_preserving_order",
+            BinaryOp::BitwiseAnd => return "ptn_bitwise_and_preserving_order",
+            BinaryOp::BitwiseXor => return "ptn_bitwise_xor_preserving_order",
+            BinaryOp::BitwiseOr => return "ptn_bitwise_or_preserving_order",
+            _ => {}
+        }
+    }
+    binary_runtime_function(op)
+}
+
 fn compound_binary_runtime_function(op: BinaryOp) -> &'static str {
     match op {
         BinaryOp::Multiply => "ptn_multiply_assign",
@@ -59261,7 +59292,7 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        out.push_str(binary_runtime_function(op));
+        out.push_str(binary_runtime_function_for_operands(op, left, right));
         out.push('(');
         if binary_runtime_function_uses_context(op) {
             out.push_str("&runtime, ");

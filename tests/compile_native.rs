@@ -28713,6 +28713,58 @@ try {
 }
 
 #[test]
+fn compile_dynamic_binary_operand_diagnostics_preserve_source_order_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-binary-operand-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-binary-operand-order.php");
+    let output = root.join("dynamic-binary-operand-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function report($label, $callback) {
+    try {
+        $callback();
+    } catch (Throwable $exception) {
+        echo $label, ':', $exception->getMessage(), "\n";
+    }
+}
+
+$int = 10;
+$bool = true;
+$resource = STDERR;
+$object = new stdClass();
+
+report('vars-mul-resource', fn() => $int * $resource);
+report('const-left-mul-resource', fn() => 10 * $resource);
+report('vars-mul-object', fn() => $int * $object);
+report('vars-or-resource', fn() => $bool | $resource);
+report('const-left-or-resource', fn() => true | $resource);
+report('reduce-resource', fn() => array_reduce([10, STDERR], fn($carry, $value) => $carry * $value, 1));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "vars-mul-resource:Unsupported operand types: int * resource\n\
+const-left-mul-resource:Unsupported operand types: resource * int\n\
+vars-mul-object:Unsupported operand types: int * stdClass\n\
+vars-or-resource:Unsupported operand types: bool | resource\n\
+const-left-or-resource:Unsupported operand types: resource | bool\n\
+reduce-resource:Unsupported operand types: int * resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_multiply_preserving_order"));
+    assert!(c_source.contains("ptn_bitwise_or_preserving_order"));
+}
+
+#[test]
 fn compile_concat_emits_array_warning_before_object_conversion_error_to_native_binary() {
     let root = temp_dir("ptn-native-concat-array-warning-order");
     fs::create_dir_all(&root).unwrap();

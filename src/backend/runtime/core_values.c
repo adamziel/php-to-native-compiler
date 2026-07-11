@@ -2649,12 +2649,16 @@ static PTN_UNUSED PtnValue ptn_not_with_runtime(PtnRuntime *runtime, PtnValue va
 static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_subtract(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED PtnValue ptn_multiply_preserving_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_bitwise_and(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_bitwise_or(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED PtnValue ptn_bitwise_and_preserving_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED PtnValue ptn_bitwise_xor_preserving_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED PtnValue ptn_bitwise_or_preserving_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_shift_left(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_integer_operator_prepare_operands(
