@@ -56820,6 +56820,14 @@ static const char *ptn_php_memory_stream_mode(const char *mode, int *writable, i
     return *append ? "a+b" : "w+b";
 }
 
+static void ptn_php_temp_release_inner_stream(PtnResource *resource, void *opaque) {
+    (void)resource;
+    PtnResource *inner_stream = (PtnResource *)opaque;
+    if (inner_stream != NULL) {
+        ptn_resource_release(inner_stream);
+    }
+}
+
 static int ptn_try_open_php_memory_stream(const char *path, const char *mode, PtnValue *out) {
     int writable = 0;
     int append = 0;
@@ -56840,14 +56848,26 @@ static int ptn_try_open_php_memory_stream(const char *path, const char *mode, Pt
     if (!ptn_parse_php_temp_max_memory(path, &max_memory)) {
         return 0;
     }
-    *out = ptn_resource(ptn_resource_new_memory_stream(
+    PtnResource *outer_stream = ptn_resource_new_memory_stream(
         path,
         stream_mode,
         PTN_STREAM_BACKEND_TEMP,
         max_memory,
         writable,
         append
-    ));
+    );
+    PtnResource *inner_stream = ptn_resource_new_memory_stream(
+        path,
+        stream_mode,
+        PTN_STREAM_BACKEND_TEMP,
+        max_memory,
+        writable,
+        append
+    );
+    ptn_resource_forbid_manual_close(inner_stream);
+    outer_stream->close_hook = ptn_php_temp_release_inner_stream;
+    outer_stream->close_hook_data = inner_stream;
+    *out = ptn_resource(outer_stream);
     return 1;
 }
 

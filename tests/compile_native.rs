@@ -44338,6 +44338,43 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_php_temp_inner_stream_cannot_be_manually_closed_to_native_binary() {
+    let root = temp_dir("ptn-native-php-temp-inner-stream-close-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-temp-inner-stream-close-guard.php");
+    let output = root.join("php-temp-inner-stream-close-guard-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$outer = fopen("php://temp", "r+b");
+$resources = get_resources();
+$inner = end($resources);
+var_dump(fclose($inner));
+var_dump(fwrite($outer, "ok"));
+var_dump(fclose($outer));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Warning: fclose(): cannot close the provided stream, as it must not be manually closed"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\nint(2)\nbool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_php_temp_release_inner_stream"));
+}
+
+#[test]
 fn compile_file_lock_truncate_write_frontier_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-file-lock-truncate-write-frontier");
     fs::create_dir_all(&root).unwrap();
