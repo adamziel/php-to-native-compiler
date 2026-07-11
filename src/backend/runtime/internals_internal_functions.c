@@ -61042,6 +61042,7 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(value.as.resource);
     if (!ptn_stream_resource_is_open(value.as.resource)) {
         if (ptn_resource_manual_close_forbidden(value.as.resource)) {
             ptn_emit_warning(
@@ -61058,6 +61059,10 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_null();
     }
     if (ptn_resource_manual_close_forbidden(value.as.resource)) {
+        if (user_stream != NULL) {
+            /* PORT NOTE: recursive user-stream closes warn, then later userland fclose() observes a closed handle. */
+            value.as.resource->user_stream_recursive_close_attempted = 1;
+        }
         ptn_emit_warning(
             &runtime->diagnostics,
             "fclose(): cannot close the provided stream, as it must not be manually closed",
@@ -61072,6 +61077,14 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
             return ptn_null();
         }
         return ptn_bool(0);
+    }
+    if (user_stream != NULL && value.as.resource->user_stream_recursive_close_attempted) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "fclose(): Argument #1 ($stream) must be an open stream resource"
+        );
+        return ptn_null();
     }
     ptn_phar_commit_writable_stream(value.as.resource);
     ptn_stream_filter_invalidate_resources_for_stream(value.as.resource);
@@ -64588,6 +64601,9 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
     }
     PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
     if (user_stream != NULL) {
+        if (resource->user_stream_recursive_close_attempted) {
+            return ptn_bool(0);
+        }
         if (user_stream->runtime == NULL ||
             user_stream->runtime->method_dispatch == NULL ||
             !ptn_object_has_declared_or_call_method(

@@ -1966,6 +1966,7 @@ struct PtnResource {
     PtnResource *registry_prev;
     PtnResource *registry_next;
     int manual_close_forbidden;
+    int user_stream_recursive_close_attempted;
     size_t object_id;
     PtnRuntime *object_id_runtime;
     PtnWeakMapMembership *weak_map_memberships;
@@ -5226,6 +5227,7 @@ static PTN_UNUSED void ptn_resource_register(PtnResource *resource) {
     resource->registry_prev = ptn_resource_registry_tail;
     resource->registry_next = NULL;
     resource->manual_close_forbidden = 0;
+    resource->user_stream_recursive_close_attempted = 0;
     if (ptn_resource_registry_tail != NULL) {
         ptn_resource_registry_tail->registry_next = resource;
     } else {
@@ -5436,6 +5438,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
+    resource->user_stream_recursive_close_attempted = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
     resource->weak_map_memberships = NULL;
@@ -5488,6 +5491,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
+    resource->user_stream_recursive_close_attempted = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
     resource->weak_map_memberships = NULL;
@@ -5537,6 +5541,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
+    resource->user_stream_recursive_close_attempted = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
     resource->weak_map_memberships = NULL;
@@ -5580,6 +5585,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->context_params = ptn_null();
     resource->curl_options = ptn_null();
     resource->manual_close_forbidden = 0;
+    resource->user_stream_recursive_close_attempted = 0;
     resource->object_id = 0;
     resource->object_id_runtime = NULL;
     resource->weak_map_memberships = NULL;
