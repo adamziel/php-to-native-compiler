@@ -1996,6 +1996,8 @@ struct PtnResource {
     int stream_eof;
     int stream_error;
     int stream_socket_tcp_nodelay;
+    int stream_socket_server_listener;
+    int stream_silent_read_error;
     PtnResourceCloseHook close_hook;
     void *close_hook_data;
     PtnResourceHookDataFree close_hook_data_free;
@@ -5471,6 +5473,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->stream_eof = 0;
     resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
+    resource->stream_socket_server_listener = 0;
+    resource->stream_silent_read_error = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -5524,6 +5528,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->stream_eof = 0;
     resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
+    resource->stream_socket_server_listener = 0;
+    resource->stream_silent_read_error = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -5574,6 +5580,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->stream_eof = 0;
     resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
+    resource->stream_socket_server_listener = 0;
+    resource->stream_silent_read_error = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -5619,6 +5627,8 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->stream_eof = 0;
     resource->stream_error = 0;
     resource->stream_socket_tcp_nodelay = 0;
+    resource->stream_socket_server_listener = 0;
+    resource->stream_silent_read_error = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -5875,6 +5885,7 @@ static PTN_UNUSED size_t ptn_stream_read_socket_bytes(PtnResource *resource, voi
     if (len == 0) {
         return 0;
     }
+    resource->stream_silent_read_error = 0;
 #if defined(_WIN32)
     size_t read_len = fread(buffer, 1, len, resource->stream);
     if (read_len != 0) {
@@ -5911,6 +5922,15 @@ static PTN_UNUSED size_t ptn_stream_read_socket_bytes(PtnResource *resource, voi
         resource->stream_error = 0;
         return 0;
     }
+#if defined(ENOTCONN)
+    if (resource->stream_socket_server_listener && errno == ENOTCONN) {
+        resource->stream_timed_out = 0;
+        resource->stream_eof = 0;
+        resource->stream_error = 1;
+        resource->stream_silent_read_error = 1;
+        return 0;
+    }
+#endif
     resource->stream_timed_out = 0;
     resource->stream_error = 1;
     return 0;
@@ -6180,6 +6200,10 @@ static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
     return resource->memory_stream->error != 0;
 }
 
+static PTN_UNUSED int ptn_stream_read_error_is_silent(PtnResource *resource) {
+    return resource != NULL && resource->stream_silent_read_error != 0;
+}
+
 static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
     if (resource == NULL) {
         return;
@@ -6195,6 +6219,7 @@ static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
         resource->stream_timed_out = 0;
         resource->stream_eof = 0;
         resource->stream_error = 0;
+        resource->stream_silent_read_error = 0;
         return;
     }
     resource->memory_stream->eof = 0;
@@ -6492,6 +6517,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         0,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -6520,6 +6547,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         0,
+        0,
+        0,
         NULL,
         NULL,
         NULL,
@@ -6544,6 +6573,8 @@ static PTN_UNUSED PtnResource *ptn_standard_stream_resource_ptr(int64_t id) {
         0,
         0,
         8192,
+        0,
+        0,
         0,
         0,
         0,

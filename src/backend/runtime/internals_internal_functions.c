@@ -63689,7 +63689,9 @@ static char *ptn_stream_read_filtered_bytes(
             return NULL;
         }
         if (read_len == 0 && ptn_stream_error(resource)) {
-            ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+            if (!ptn_stream_read_error_is_silent(resource)) {
+                ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+            }
             if (read_error != NULL) {
                 *read_error = 1;
             }
@@ -63749,7 +63751,9 @@ static char *ptn_stream_read_filtered_bytes(
         if (read_len == 0) {
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
-                ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                if (!ptn_stream_read_error_is_silent(resource)) {
+                    ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                }
                 if (read_error != NULL) {
                     *read_error = 1;
                 }
@@ -63762,7 +63766,9 @@ static char *ptn_stream_read_filtered_bytes(
         if (read_len < fill_size) {
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
-                ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                if (!ptn_stream_read_error_is_silent(resource)) {
+                    ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                }
                 if (read_error != NULL) {
                     *read_error = 1;
                 }
@@ -65388,7 +65394,9 @@ static int ptn_stream_read_line(
                 return -1;
             }
             if (ptn_stream_error(resource)) {
-                ptn_emit_stream_read_notice(runtime, function_name, has_max_len ? max_len : 8192, line);
+                if (!ptn_stream_read_error_is_silent(resource)) {
+                    ptn_emit_stream_read_notice(runtime, function_name, has_max_len ? max_len : 8192, line);
+                }
                 ptn_stream_clear_error(resource);
                 if (buffer->data != NULL) {
                     free(buffer->data);
@@ -66442,16 +66450,27 @@ static PtnValue ptn_stream_read_remaining(
         }
         if (read_len == 0) {
             if (ptn_stream_error(resource)) {
-                ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                if (!ptn_stream_read_error_is_silent(resource)) {
+                    ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+                }
                 ptn_stream_clear_error(resource);
+                if (strcmp(function_name, "stream_get_contents") == 0) {
+                    break;
+                }
                 free(buffer.data);
                 return ptn_bool(0);
             }
             break;
         }
         if (read_len < fill_size && ptn_stream_error(resource)) {
-            ptn_emit_stream_read_notice(runtime, function_name, fill_size, line);
+            int silent_read_error = ptn_stream_read_error_is_silent(resource);
+            if (!silent_read_error) {
+                ptn_emit_stream_read_notice(runtime, function_name, fill_size, line);
+            }
             ptn_stream_clear_error(resource);
+            if (silent_read_error && strcmp(function_name, "stream_get_contents") == 0) {
+                break;
+            }
             free(buffer.data);
             return ptn_bool(0);
         }
@@ -205907,6 +205926,7 @@ static PtnValue ptn_stream_socket_server_open_tcp(
     char *uri = ptn_duplicate_string_len(address.data, address.len);
     PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
     resource->stream_socket_tcp_nodelay = tcp_nodelay;
+    resource->stream_socket_server_listener = 1;
     PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
@@ -209169,7 +209189,9 @@ static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t ar
     }
     char *uri = ptn_duplicate_string_len(address.data, address.len);
     ptn_string_operand_free(address);
-    PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+    PtnResource *resource = ptn_resource_new_stream(stream, uri, "r+");
+    resource->stream_socket_server_listener = socktype == SOCK_STREAM;
+    PtnValue result = ptn_resource(resource);
     free(uri);
     ptn_stream_socket_server_assign_error(runtime, argc, args, 0, "");
     return result;
