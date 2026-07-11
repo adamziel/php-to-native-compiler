@@ -56714,6 +56714,7 @@ typedef struct {
     size_t read_buffer_len;
     size_t read_buffer_offset;
     int is_directory;
+    int suppress_close_callback_on_unwind;
 } PtnUserStreamResourceData;
 
 typedef struct {
@@ -58566,6 +58567,21 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
         resource->directory = NULL;
     }
     const char *method_name = data->is_directory ? "dir_closedir" : "stream_close";
+    if (data->suppress_close_callback_on_unwind) {
+        /*
+         * PORT NOTE: php-src can destroy internally-owned wrapper streams while
+         * unwinding from a wrapper callback exception; that cleanup does not
+         * invoke stream_close.
+         */
+        return;
+    }
+    if (data->runtime->exceptions != NULL && data->runtime->exceptions->active_exception != NULL) {
+        /*
+         * PORT NOTE: php-src routes user stream close through zend_call_function(),
+         * which returns without invoking user code while EG(exception) is set.
+         */
+        return;
+    }
     if (data->runtime->method_dispatch == NULL ||
         !ptn_object_has_declared_or_call_method(data->runtime, data->wrapper_object, method_name)) {
         return;
@@ -59910,6 +59926,7 @@ static int ptn_try_open_user_stream_wrapper(
     resource_data->read_buffer_len = 0;
     resource_data->read_buffer_offset = 0;
     resource_data->is_directory = 0;
+    resource_data->suppress_close_callback_on_unwind = 0;
     resource->close_hook = ptn_user_stream_close_hook;
     resource->close_hook_data = resource_data;
     resource->close_hook_data_free = ptn_user_stream_resource_data_free;
@@ -60648,6 +60665,7 @@ static int ptn_try_open_user_directory_wrapper(
     resource_data->read_buffer_len = 0;
     resource_data->read_buffer_offset = 0;
     resource_data->is_directory = 1;
+    resource_data->suppress_close_callback_on_unwind = 0;
     resource->close_hook = ptn_user_stream_close_hook;
     resource->close_hook_data = resource_data;
     resource->close_hook_data_free = ptn_user_stream_resource_data_free;
@@ -303351,6 +303369,22 @@ static int ptn_dynamic_read_file(const char *path, char **contents_out, size_t *
     return 1;
 }
 
+static void ptn_user_stream_close_internal_read_value(PtnValue stream_value) {
+    PtnValue resolved = ptn_value_deref(stream_value);
+    if (resolved.type != PTN_RESOURCE || !ptn_stream_resource_is_open(resolved.as.resource)) {
+        return;
+    }
+    ptn_resource_close(resolved.as.resource);
+}
+
+static void ptn_user_stream_set_close_suppressed_on_unwind(PtnResource *resource, int suppress) {
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL) {
+        return;
+    }
+    data->suppress_close_callback_on_unwind = suppress;
+}
+
 static int ptn_try_read_user_stream_wrapper_bytes(
     PtnRuntime *runtime,
     const char *function_name,
@@ -303377,6 +303411,7 @@ static int ptn_try_read_user_stream_wrapper_bytes(
     if (runtime != NULL &&
         runtime->exceptions != NULL &&
         runtime->exceptions->active_exception != NULL) {
+        ptn_user_stream_close_internal_read_value(stream_value);
         ptn_value_destroy(&stream_value);
         return -1;
     }
@@ -303394,6 +303429,7 @@ static int ptn_try_read_user_stream_wrapper_bytes(
         user_stream->runtime->method_dispatch != NULL &&
         ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_set_option")) {
         PtnValue option_result = ptn_null();
+        ptn_user_stream_set_close_suppressed_on_unwind(stream, 1);
         (void)ptn_user_stream_dispatch_set_option(
             runtime,
             stream,
@@ -303405,10 +303441,12 @@ static int ptn_try_read_user_stream_wrapper_bytes(
             line,
             &option_result
         );
+        ptn_user_stream_set_close_suppressed_on_unwind(stream, 0);
         ptn_value_destroy(&option_result);
         if (runtime != NULL &&
             runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL) {
+            ptn_user_stream_close_internal_read_value(stream_value);
             ptn_value_destroy(&stream_value);
             return -1;
         }
@@ -303417,15 +303455,19 @@ static int ptn_try_read_user_stream_wrapper_bytes(
         user_stream->runtime != NULL &&
         user_stream->runtime->method_dispatch != NULL &&
         ptn_object_has_declared_or_call_method(user_stream->runtime, user_stream->wrapper_object, "stream_stat")) {
+        ptn_user_stream_set_close_suppressed_on_unwind(stream, 1);
         PtnValue stat_result = ptn_internal_fstat(runtime, 1, &stream_value, line);
+        ptn_user_stream_set_close_suppressed_on_unwind(stream, 0);
         ptn_value_destroy(&stat_result);
         if (runtime != NULL &&
             runtime->exceptions != NULL &&
             runtime->exceptions->active_exception != NULL) {
+            ptn_user_stream_close_internal_read_value(stream_value);
             ptn_value_destroy(&stream_value);
             return -1;
         }
     }
+    ptn_user_stream_set_close_suppressed_on_unwind(stream, 1);
     PtnValue contents = ptn_stream_read_remaining(
         runtime,
         function_name == NULL ? "include" : function_name,
@@ -303433,9 +303475,15 @@ static int ptn_try_read_user_stream_wrapper_bytes(
         -1,
         line
     );
+    ptn_user_stream_set_close_suppressed_on_unwind(stream, 0);
     if (runtime != NULL &&
         runtime->exceptions != NULL &&
         runtime->exceptions->active_exception != NULL) {
+        /*
+         * PORT NOTE: php-src destroys Zend include streams while the callback
+         * exception is active, so stream_close is not invoked for this cleanup.
+         */
+        ptn_user_stream_close_internal_read_value(stream_value);
         ptn_value_destroy(&contents);
         ptn_value_destroy(&stream_value);
         return -1;
