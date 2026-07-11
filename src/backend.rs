@@ -48747,8 +48747,9 @@ impl ValueEmitter {
             line,
         } = target
         {
-            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let path = emit_array_path_segments(out, self, dimensions);
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
                 out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", \"");
@@ -48763,7 +48764,6 @@ impl ValueEmitter {
                 out.push_str("        ptn_rethrow_exception(&runtime);\n");
                 out.push_str("    }\n");
 
-                let path = emit_array_path_segments(out, self, dimensions);
                 let value_temp = self.emit_materialized_value(out, value);
                 let base_temp = self.next_temp();
                 let container_temp = self.next_temp();
@@ -48872,6 +48872,7 @@ impl ValueEmitter {
                 emit_array_path_segments(out, self, dimensions)
             };
             emit_deferred_undefined_variable_warnings(out, self, &path, *line);
+            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -49355,10 +49356,11 @@ impl ValueEmitter {
         }
 
         if let AssignmentTarget::DynamicVariable { name, line } = target {
-            let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, *line);
-            self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let value_temp = self.emit_materialized_value(out, value);
+                let (name_temp, len_temp) =
+                    self.emit_dynamic_variable_name_with_len(out, name, *line);
+                self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -49408,6 +49410,8 @@ impl ValueEmitter {
                 return assigned_temp;
             }
             let value_temp = self.emit_materialized_value(out, value);
+            let (name_temp, len_temp) = self.emit_dynamic_variable_name_with_len(out, name, *line);
+            self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
