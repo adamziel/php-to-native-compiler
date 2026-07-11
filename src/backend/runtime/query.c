@@ -410,7 +410,36 @@ typedef struct {
     PtnParseStrPathSegment *segments;
     size_t len;
     size_t capacity;
+    const char *pre_mangled_name;
+    size_t pre_mangled_name_len;
 } PtnParseStrPath;
+
+/* PORT NOTE: Mirrors php-src's php_is_forbidden_variable_name(). */
+static int ptn_is_forbidden_variable_name(
+    const char *mangled_name,
+    size_t mangled_name_len,
+    const char *pre_mangled_name,
+    size_t pre_mangled_name_len
+) {
+    static const char host_prefix[] = "__Host-";
+    static const char secure_prefix[] = "__Secure-";
+    size_t host_prefix_len = sizeof(host_prefix) - 1;
+    size_t secure_prefix_len = sizeof(secure_prefix) - 1;
+
+    if (mangled_name_len >= host_prefix_len &&
+        memcmp(mangled_name, host_prefix, host_prefix_len) == 0 &&
+        (pre_mangled_name_len < host_prefix_len ||
+            memcmp(pre_mangled_name, host_prefix, host_prefix_len) != 0)) {
+        return 1;
+    }
+    if (mangled_name_len >= secure_prefix_len &&
+        memcmp(mangled_name, secure_prefix, secure_prefix_len) == 0 &&
+        (pre_mangled_name_len < secure_prefix_len ||
+            memcmp(pre_mangled_name, secure_prefix, secure_prefix_len) != 0)) {
+        return 1;
+    }
+    return 0;
+}
 
 static void ptn_parse_str_path_push(PtnParseStrPath *path, PtnArrayKey key, int append) {
     if (path->len == path->capacity) {
@@ -454,6 +483,8 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
     while (name_start < len && data[name_start] == ' ') {
         name_start++;
     }
+    path.pre_mangled_name = data + name_start;
+    path.pre_mangled_name_len = len - name_start;
     size_t base_end = name_start;
     while (base_end < len && data[base_end] != '[') {
         base_end++;
@@ -499,6 +530,16 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
 
 static void ptn_parse_str_assign(PtnArray *array, PtnParseStrPath *path, size_t index, PtnValue value) {
     PtnParseStrPathSegment *segment = &path->segments[index];
+    if (!segment->append && segment->key.type == PTN_ARRAY_KEY_STRING &&
+        ptn_is_forbidden_variable_name(
+            segment->key.as.string,
+            segment->key.string_len,
+            path->pre_mangled_name,
+            path->pre_mangled_name_len
+        )) {
+        ptn_value_destroy(&value);
+        return;
+    }
     PtnArrayKey key = segment->append
         ? ptn_array_int_key(array->next_auto_key)
         : ptn_array_key_clone(segment->key);

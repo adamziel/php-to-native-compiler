@@ -109998,6 +109998,96 @@ echo file_get_contents('php://input'), \"\\n\";\n",
 }
 
 #[test]
+fn phpc_request_variable_prefix_guards_match_php_src() {
+    let root = temp_dir("ptn-phpc-request-variable-prefix-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("request-variable-prefix-guards.php");
+    fs::write(
+        &input,
+        "<?php\n\
+parse_str('..Host-parsed=bad&__Host-parsed=good&. Secure-parsed=bad&__Secure-parsed=secure&  __Host-leading=trimmed&foo[ok][__Secure-nested]=bad&foo[ok][kept]=yes', $parsed);\n\
+var_dump($parsed, $_GET, $_POST, $_COOKIE);\n",
+    )
+    .unwrap();
+
+    let body = b"..Host-post=bad&__Host-post=good&. Secure-post=bad&. Elephant=post";
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("variables_order=GPC")
+        .arg("-d")
+        .arg("register_argc_argv=0")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env(
+            "QUERY_STRING",
+            "..Host-get=bad&__Host-get=good&. Secure-get=bad&. Elephant=get",
+        )
+        .env("CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("CONTENT_LENGTH", body.len().to_string())
+        .env(
+            "HTTP_COOKIE",
+            "..Host-test=ignore; __Host-test=correct; . Secure-test=ignore; __Secure-test=secure;   __Host-leading=trimmed; . Elephpant=Awesome; duplicate=first; duplicate=second",
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(body).unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(4) {\n",
+            "  [\"__Host-parsed\"]=>\n",
+            "  string(4) \"good\"\n",
+            "  [\"__Secure-parsed\"]=>\n",
+            "  string(6) \"secure\"\n",
+            "  [\"__Host-leading\"]=>\n",
+            "  string(7) \"trimmed\"\n",
+            "  [\"foo\"]=>\n",
+            "  array(1) {\n",
+            "    [\"ok\"]=>\n",
+            "    array(1) {\n",
+            "      [\"kept\"]=>\n",
+            "      string(3) \"yes\"\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"__Host-get\"]=>\n",
+            "  string(4) \"good\"\n",
+            "  [\"__Elephant\"]=>\n",
+            "  string(3) \"get\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"__Host-post\"]=>\n",
+            "  string(4) \"good\"\n",
+            "  [\"__Elephant\"]=>\n",
+            "  string(4) \"post\"\n",
+            "}\n",
+            "array(5) {\n",
+            "  [\"__Host-test\"]=>\n",
+            "  string(7) \"correct\"\n",
+            "  [\"__Secure-test\"]=>\n",
+            "  string(6) \"secure\"\n",
+            "  [\"__Host-leading\"]=>\n",
+            "  string(7) \"trimmed\"\n",
+            "  [\"__Elephpant\"]=>\n",
+            "  string(7) \"Awesome\"\n",
+            "  [\"duplicate\"]=>\n",
+            "  string(5) \"first\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cgi_request_context_applies_special_chars_default_filter() {
     let root = temp_dir("ptn-phpc-cgi-request-filter-default");
     fs::create_dir_all(&root).unwrap();

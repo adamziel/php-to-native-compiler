@@ -40454,6 +40454,14 @@ static PtnValue ptn_request_parse_cookie_header(const char *header) {
         size_t cookie_name_len = 0;
         char *cookie_name =
             ptn_request_cookie_name(token_start, (size_t)(name_end - token_start), &cookie_name_len);
+        if (ptn_is_forbidden_variable_name(
+                cookie_name,
+                cookie_name_len,
+                token_start,
+                (size_t)(name_end - token_start))) {
+            free(cookie_name);
+            continue;
+        }
         if (ptn_request_array_has_string_key(result.as.array, cookie_name, cookie_name_len)) {
             free(cookie_name);
             continue;
