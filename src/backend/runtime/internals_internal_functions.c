@@ -56674,6 +56674,12 @@ static void ptn_emit_stream_read_notice(
     size_t requested_len,
     size_t line
 );
+static void ptn_emit_stream_filter_invalid_sequence_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *filter_name,
+    size_t line
+);
 static int ptn_lstat_path(const char *path, struct stat *info);
 static const char *ptn_runtime_current_include_path(PtnRuntime *runtime);
 static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *path);
@@ -61137,6 +61143,10 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
     ptn_phar_commit_writable_stream(value.as.resource);
     ptn_stream_filter_invalidate_resources_for_stream(value.as.resource);
     ptn_resource_close(value.as.resource);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
     return ptn_bool(1);
 }
 
@@ -61536,6 +61546,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->name = ptn_duplicate_string_len(name.data, name.len);
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
+    filter->base64_invalid_sequence = 0;
     filter->filter_line_length = 0;
     filter->filter_line_position = 0;
     filter->filter_line_break = ptn_duplicate_string_len("\n", 1);
@@ -61670,7 +61681,7 @@ static void ptn_stream_filter_throw_dynamic_metadata_property_errors(
     exit(255);
 }
 
-static int ptn_stream_filter_initialize_user_object(
+static int ptn_stream_filter_initialize_user_object_unframed(
     PtnRuntime *runtime,
     PtnStreamFilter *filter,
     PtnUserStreamFilterRegistration *registration,
@@ -61799,6 +61810,46 @@ static int ptn_stream_filter_initialize_user_object(
         }
     }
     return 1;
+}
+
+static int ptn_stream_filter_initialize_user_object(
+    PtnRuntime *runtime,
+    PtnStreamFilter *filter,
+    PtnUserStreamFilterRegistration *registration,
+    PtnStringOperand filter_name,
+    PtnValue filter_params,
+    PtnValue stream_value,
+    size_t line
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        return ptn_stream_filter_initialize_user_object_unframed(
+            runtime,
+            filter,
+            registration,
+            filter_name,
+            filter_params,
+            stream_value,
+            line
+        );
+    }
+
+    PtnTryFrame frame;
+    ptn_try_frame_push(runtime, &frame);
+    if (setjmp(frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &frame);
+        return 0;
+    }
+    int ok = ptn_stream_filter_initialize_user_object_unframed(
+        runtime,
+        filter,
+        registration,
+        filter_name,
+        filter_params,
+        stream_value,
+        line
+    );
+    ptn_try_frame_pop(runtime, &frame);
+    return ok;
 }
 
 static int ptn_stream_filter_keep_after_user_init_failure(
@@ -62264,9 +62315,20 @@ static int ptn_stream_filter_chain_has_failed_user(PtnStreamFilter *filter) {
     return 0;
 }
 
+static const char *ptn_stream_filter_chain_take_base64_invalid_sequence(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->base64_invalid_sequence) {
+            filter->base64_invalid_sequence = 0;
+            return filter->name;
+        }
+    }
+    return NULL;
+}
+
 static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
+        filter->base64_invalid_sequence = 0;
         memset(filter->base64_values, 0, sizeof(filter->base64_values));
         filter->zlib_finished = 0;
         filter->user_filter_closed = 0;
@@ -62407,12 +62469,52 @@ static void ptn_stream_filter_emit_unable_to_create(
     free(message);
 }
 
+static void ptn_stream_filter_emit_unable_to_create_filter(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand name,
+    size_t line
+) {
+    char *filter_name = ptn_duplicate_string_len(name.data, name.len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Unable to create filter (%s)",
+        function_name,
+        filter_name
+    );
+    if (needed < 0) {
+        free(filter_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(filter_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Unable to create filter (%s)",
+        function_name,
+        filter_name
+    );
+    free(filter_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
 static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
     if (filter == NULL) {
         return;
     }
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
+    filter->base64_invalid_sequence = 0;
     filter->zlib_error = 0;
     filter->zlib_finished = 0;
     filter->iconv_error = 0;
@@ -62763,6 +62865,9 @@ static char *ptn_stream_apply_user_filter_alloc(
     *out_len = output_len;
 
     if (status == PTN_PSFS_ERR_FATAL) {
+        if (input_unprocessed && len != 0) {
+            ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        }
         filter->user_filter_failed = 1;
         *ok = 0;
     } else if (input_unprocessed && len != 0) {
@@ -62898,7 +63003,11 @@ static char *ptn_stream_apply_base64_decode_filter_alloc(
         }
         int value = ptn_base64_decode_value(byte);
         if (value < 0 && byte != '=') {
+            filter->base64_invalid_sequence = 1;
             continue;
+        }
+        if (byte == '=' && filter->base64_value_count < 2) {
+            filter->base64_invalid_sequence = 1;
         }
         filter->base64_values[filter->base64_value_count++] = byte == '=' ? -1 : value;
         ptn_stream_base64_filter_emit(filter, &output);
@@ -63318,18 +63427,32 @@ static void ptn_stream_filter_chain_flush_closing_impl(PtnStreamFilter *filter) 
         return;
     }
 
+    PtnTryFrame frame;
+    int frame_active = runtime->exceptions != NULL;
+    int flush_threw = 0;
+    if (frame_active) {
+        ptn_try_frame_push(runtime, &frame);
+        if (setjmp(frame.jump) != 0) {
+            flush_threw = 1;
+        }
+    }
     size_t output_len = 0;
-    char *output = ptn_stream_apply_filter_chain_alloc(
-        runtime,
-        "stream filter",
-        filter,
-        "",
-        0,
-        1,
-        0,
-        &output_len
-    );
-    free(output);
+    if (!flush_threw) {
+        char *output = ptn_stream_apply_filter_chain_alloc(
+            runtime,
+            "stream filter",
+            filter,
+            "",
+            0,
+            1,
+            0,
+            &output_len
+        );
+        free(output);
+    }
+    if (frame_active) {
+        ptn_try_frame_pop(runtime, &frame);
+    }
     (void)output_len;
 }
 
@@ -63621,13 +63744,13 @@ static size_t ptn_stream_filtered_read_fill_pending(
         int closing = ptn_stream_eof(resource);
         size_t filtered_len = 0;
         char *filtered = ptn_stream_apply_filter_chain_alloc(
-            NULL,
-            "fread",
+            runtime,
+            function_name,
             resource->read_filters,
             raw.data,
             raw.len,
             closing,
-            0,
+            line,
             &filtered_len
         );
         free(raw.data);
@@ -63656,13 +63779,13 @@ static size_t ptn_stream_filtered_read_fill_pending(
     int closing = close_terminal_short_read && read_len < want && ptn_stream_eof(resource);
     size_t filtered_len = 0;
     char *filtered = ptn_stream_apply_filter_chain_alloc(
-        NULL,
-        "fread",
+        runtime,
+        function_name,
         resource->read_filters,
         (const char *)chunk,
         read_len,
         closing,
-        0,
+        line,
         &filtered_len
     );
     ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
@@ -63760,6 +63883,14 @@ static char *ptn_stream_read_filtered_bytes(
                 return NULL;
             }
         }
+        const char *base64_filter = ptn_stream_filter_chain_take_base64_invalid_sequence(resource->read_filters);
+        if (base64_filter != NULL) {
+            ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, base64_filter, line);
+            if (ptn_stream_filtered_read_pending_available(resource) == 0) {
+                *ok = 0;
+                return NULL;
+            }
+        }
         const char *iconv_filter = ptn_stream_filter_chain_take_iconv_error(resource->read_filters);
         if (iconv_filter != NULL) {
             ptn_emit_iconv_stream_filter_warning(runtime, function_name, iconv_filter, line);
@@ -63832,6 +63963,24 @@ static void ptn_emit_stream_filter_invalid_sequence_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static void ptn_emit_stream_filter_failed_prebuffered_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Filter failed to process pre-buffered data",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static void ptn_stream_filter_probe_prebuffered_zlib(
     PtnRuntime *runtime,
     const char *function_name,
@@ -63887,17 +64036,86 @@ static void ptn_stream_filter_probe_prebuffered_zlib(
 
     filter->zlib_error = 0;
     ptn_emit_zlib_data_notice(runtime, function_name, line);
-    char message[160];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "%s(): Filter failed to process pre-buffered data",
-        function_name
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
+    ptn_emit_stream_filter_failed_prebuffered_warning(runtime, function_name, line);
+}
+
+static void ptn_stream_filter_probe_prebuffered_read_filter(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    PtnStreamFilter *filter,
+    size_t line
+) {
+    if (filter == NULL || filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE) {
+        return;
     }
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    int64_t position = ptn_stream_tell(resource);
+    if (position <= 0) {
+        return;
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    unsigned char chunk[4096];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(resource, chunk, sizeof(chunk));
+        if (read_len != 0) {
+            ptn_string_buffer_append_len(&buffer, (const char *)chunk, read_len);
+        }
+        if (read_len < sizeof(chunk)) {
+            break;
+        }
+    }
+    ptn_stream_clear_error(resource);
+    (void)ptn_stream_seek(resource, position, SEEK_SET);
+
+    if (buffer.len == 0) {
+        free(buffer.data);
+        return;
+    }
+
+    size_t output_len = 0;
+    char *output = ptn_stream_apply_filter_chain_alloc(
+        runtime,
+        function_name,
+        filter,
+        buffer.data,
+        buffer.len,
+        0,
+        line,
+        &output_len
+    );
+    free(buffer.data);
+    free(output);
+    (void)output_len;
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+
+    int failed = 0;
+    const char *invalid_filter = ptn_stream_filter_chain_take_base64_invalid_sequence(filter);
+    if (invalid_filter != NULL) {
+        ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, invalid_filter, line);
+        failed = 1;
+    }
+    const char *qp_filter = ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(filter);
+    if (qp_filter != NULL) {
+        ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, qp_filter, line);
+        failed = 1;
+    }
+    const char *iconv_filter = ptn_stream_filter_chain_take_iconv_error(filter);
+    if (iconv_filter != NULL) {
+        ptn_emit_iconv_stream_filter_warning(runtime, function_name, iconv_filter, line);
+        failed = 1;
+    }
+    if (ptn_stream_filter_chain_has_failed_user(filter)) {
+        failed = 1;
+    }
+    if (failed) {
+        ptn_emit_stream_filter_failed_prebuffered_warning(runtime, function_name, line);
+    }
 }
 
 static int ptn_stream_getc_filtered(PtnResource *resource) {
@@ -63965,6 +64183,7 @@ static size_t ptn_stream_write_filtered(
     int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->write_filters);
     const char *iconv_filter = ptn_stream_filter_chain_take_iconv_error(resource->write_filters);
     const char *invalid_filter = ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(resource->write_filters);
+    const char *base64_filter = ptn_stream_filter_chain_take_base64_invalid_sequence(resource->write_filters);
     int user_write_failed = 0;
     size_t written = ptn_user_stream_resource_data(resource) != NULL
         ? ptn_user_stream_write_bytes(runtime, resource, output, output_len, line, &user_write_failed)
@@ -63973,10 +64192,13 @@ static size_t ptn_stream_write_filtered(
     if (invalid_filter != NULL) {
         ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, invalid_filter, line);
     }
+    if (base64_filter != NULL) {
+        ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, base64_filter, line);
+    }
     if (iconv_filter != NULL) {
         ptn_emit_iconv_stream_filter_warning(runtime, function_name, iconv_filter, line);
     }
-    if (filter_error || iconv_filter != NULL || user_write_failed) {
+    if (filter_error || iconv_filter != NULL || base64_filter != NULL || user_write_failed) {
         return 0;
     }
     if (output_len == 0 && len != 0 && ptn_stream_filter_chain_has_user(resource->write_filters)) {
@@ -64128,8 +64350,13 @@ static PtnValue ptn_internal_stream_filter_attach(
         );
         if (kind == PTN_STREAM_FILTER_USER &&
             !ptn_stream_filter_initialize_user_object(runtime, read_filter, user_registration, name, filter_params, stream_object, line)) {
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+                ptn_stream_filter_emit_unable_to_create_filter(runtime, function_name, name, line);
+            }
             if (ptn_stream_filter_keep_after_user_init_failure(runtime, read_filter)) {
                 ptn_string_operand_free(name);
+                ptn_rethrow_exception(runtime);
                 return ptn_null();
             }
             if (runtime->exceptions->active_exception == NULL) {
@@ -64139,9 +64366,19 @@ static PtnValue ptn_internal_stream_filter_attach(
                 ptn_stream_filter_free(read_filter);
             }
             ptn_string_operand_free(name);
-            return runtime->exceptions->active_exception == NULL ? ptn_bool(0) : ptn_null();
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_rethrow_exception(runtime);
+                return ptn_null();
+            }
+            return ptn_bool(0);
         }
         ptn_stream_filter_probe_prebuffered_zlib(runtime, function_name, stream, read_filter, line);
+        ptn_stream_filter_probe_prebuffered_read_filter(runtime, function_name, stream, read_filter, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
         write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level, write_seek_mode);
@@ -64153,6 +64390,10 @@ static PtnValue ptn_internal_stream_filter_attach(
         );
         if (kind == PTN_STREAM_FILTER_USER &&
             !ptn_stream_filter_initialize_user_object(runtime, write_filter, user_registration, name, filter_params, stream_object, line)) {
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+                ptn_stream_filter_emit_unable_to_create_filter(runtime, function_name, name, line);
+            }
             int keep_write_filter = ptn_stream_filter_keep_after_user_init_failure(runtime, write_filter);
             if (!keep_write_filter &&
                 ptn_stream_filter_chain_unlink(&stream->write_filters, write_filter)) {
@@ -64160,6 +64401,7 @@ static PtnValue ptn_internal_stream_filter_attach(
             }
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(name);
+                ptn_rethrow_exception(runtime);
                 return ptn_null();
             }
             ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
@@ -64278,6 +64520,17 @@ static void ptn_stream_filter_flush_until_closed(
     (void)output_len;
 }
 
+static void ptn_stream_filter_emit_unable_to_flush_remove_warning(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "stream_filter_remove(): Unable to flush filter, not removing",
+        line
+    );
+}
+
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue filter = ptn_value_deref(args[0]);
@@ -64321,6 +64574,10 @@ static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t ar
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        if (ptn_stream_filter_chain_has_failed_user(filter_data->read_filter)) {
+            ptn_stream_filter_emit_unable_to_flush_remove_warning(runtime, line);
+            return ptn_bool(0);
+        }
     }
     if (filter_data->read_filter != NULL &&
         ptn_stream_filter_chain_unlink(&stream->read_filters, filter_data->read_filter)) {
@@ -64338,6 +64595,10 @@ static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t ar
         );
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
+        }
+        if (ptn_stream_filter_chain_has_failed_user(filter_data->write_filter)) {
+            ptn_stream_filter_emit_unable_to_flush_remove_warning(runtime, line);
+            return ptn_bool(0);
         }
     }
     if (filter_data->write_filter != NULL &&
@@ -64427,6 +64688,10 @@ static PtnValue ptn_internal_fwrite_named(
     errno = 0;
     size_t written = ptn_stream_write_filtered(runtime, function_name, resource, data.data, length, line);
     ptn_string_operand_free(data);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
     if (written != length && ptn_stream_error(resource)) {
         if (!ptn_stream_write_failure_is_silent(resource)) {
             ptn_emit_stream_write_notice(runtime, function_name, length, line);
@@ -66494,6 +66759,14 @@ static PtnValue ptn_stream_read_remaining(
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
+            if (ptn_stream_filtered_read_pending_available(resource) == 0) {
+                free(buffer.data);
+                return ptn_bool(0);
+            }
+        }
+        const char *base64_filter = ptn_stream_filter_chain_take_base64_invalid_sequence(resource->read_filters);
+        if (base64_filter != NULL) {
+            ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, base64_filter, line);
             if (ptn_stream_filtered_read_pending_available(resource) == 0) {
                 free(buffer.data);
                 return ptn_bool(0);
@@ -69305,9 +69578,18 @@ static int ptn_php_filter_apply_filter_name(
                 return 1;
             }
             free(output);
+        } else if (runtime->exceptions->active_exception != NULL) {
+            const char *display_function = function_name == NULL ? "php://filter" : function_name;
+            ptn_stream_filter_emit_unable_to_create(runtime, display_function, name, line);
+            ptn_stream_filter_emit_unable_to_create_filter(runtime, display_function, name, line);
         }
+        int rethrow_filter_exception = runtime->exceptions->active_exception != NULL;
         ptn_stream_filter_free(filter);
         ptn_resource_release(stream_resource);
+        if (rethrow_filter_exception) {
+            ptn_rethrow_exception(runtime);
+            return 1;
+        }
         return runtime->exceptions->active_exception == NULL ? 0 : 1;
     }
     PtnStreamFilter *filter = ptn_stream_filter_new(

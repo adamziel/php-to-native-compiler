@@ -45700,6 +45700,59 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_base64_filter_reports_invalid_sequences_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-base64-filter-invalid-sequence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-base64-filter-invalid-sequence.php");
+    let output = root.join("stream-base64-filter-invalid-sequence-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function run_filter_error($buffered) {
+    $stream = fopen("php://memory", "wb+");
+    fwrite($stream, $buffered ? ".\r\n===" : "===");
+    fseek($stream, 0);
+    if ($buffered) {
+        stream_get_line($stream, 8192, "\r\n");
+        stream_filter_append($stream, "convert.base64-decode");
+    } else {
+        stream_filter_append($stream, "convert.base64-decode");
+        stream_get_contents($stream);
+    }
+}
+
+run_filter_error(true);
+run_filter_error(false);
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: stream_filter_append(): Stream filter (convert.base64-decode): invalid byte sequence"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: stream_filter_append(): Filter failed to process pre-buffered data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: stream_get_contents(): Stream filter (convert.base64-decode): invalid byte sequence"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("Done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_chain_take_base64_invalid_sequence"));
+}
+
+#[test]
 fn compile_stream_get_filters_to_native_binary() {
     let root = temp_dir("ptn-native-stream-get-filters");
     fs::create_dir_all(&root).unwrap();
@@ -45796,6 +45849,161 @@ ABC\n"
     assert!(c_source.contains("ptn_internal_stream_filter_register"));
     assert!(c_source.contains("ptn_internal_stream_bucket_make_writeable"));
     assert!(c_source.contains("PTN_PSFS_PASS_ON"));
+}
+
+#[test]
+fn compile_user_stream_filter_failed_remove_flush_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-failed-remove-flush");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-failed-remove-flush.php");
+    let output = root.join("stream-user-filter-failed-remove-flush-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class FatalFilter extends php_user_filter {
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+        }
+        return PSFS_ERR_FATAL;
+    }
+}
+
+stream_filter_register("fatal.flush", FatalFilter::class);
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "payload");
+rewind($stream);
+$filter = stream_filter_append($stream, "fatal.flush", STREAM_FILTER_READ);
+var_dump(stream_get_contents($stream));
+var_dump(stream_filter_remove($filter));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: stream_filter_remove(): Unable to flush filter, not removing"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_emit_unable_to_flush_remove_warning"));
+}
+
+#[test]
+fn compile_php_filter_user_filter_init_failure_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-php-filter-user-filter-init-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-filter-user-filter-init-failure.php");
+    let output = root.join("php-filter-user-filter-init-failure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class SampleFilter extends php_user_filter {
+    private $data = \FOO;
+}
+
+stream_filter_register("sample.filter", SampleFilter::class);
+try {
+    var_dump(file_get_contents("php://filter/read=sample.filter/resource=" . __FILE__));
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: file_get_contents(): Unable to create or locate filter \"sample.filter\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: file_get_contents(): Unable to create filter (sample.filter)"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Undefined constant \"FOO\""), "{stdout}");
+    assert!(stdout.ends_with("Done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_emit_unable_to_create_filter"));
+}
+
+#[test]
+fn compile_user_stream_filter_typed_stream_property_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-user-filter-typed-stream-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-user-filter-typed-stream-property.php");
+    let output = root.join("stream-user-filter-typed-stream-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class PassFilter {
+    public $filtername;
+    public $params;
+    public int $stream = 1;
+
+    public function filter($in, $out, &$consumed, $closing): int {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
+
+stream_filter_register("pass", PassFilter::class);
+$fp = fopen("php://memory", "w");
+stream_filter_append($fp, "pass");
+try {
+    fwrite($fp, "data");
+} catch (TypeError $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    fclose($fp);
+} catch (TypeError $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+unset($fp);
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fwrite(): Unprocessed filter buckets remaining on input brigade"),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("TypeError: Cannot assign resource to property PassFilter::$stream of type int")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("Done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_chain_flush_closing_impl"));
 }
 
 #[test]

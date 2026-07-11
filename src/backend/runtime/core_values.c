@@ -2027,6 +2027,7 @@ struct PtnStreamFilter {
     char *name;
     int base64_values[4];
     size_t base64_value_count;
+    int base64_invalid_sequence;
     size_t filter_line_length;
     size_t filter_line_position;
     char *filter_line_break;
