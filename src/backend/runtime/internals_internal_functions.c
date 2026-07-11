@@ -246678,6 +246678,41 @@ static PtnValue ptn_internal_zend_test_gh18756(PtnRuntime *runtime, size_t argc,
     return ptn_null();
 }
 
+static int ptn_zend_test_value_is_refcounted(PtnValue value) {
+    if (value.type == PTN_REFERENCE) {
+        return 1;
+    }
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_STRING:
+        case PTN_RESOURCE:
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            return 1;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return 0;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_zend_leak_variable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    if (!ptn_zend_test_value_is_refcounted(args[0])) {
+        ptn_emit_warning(&runtime->diagnostics, "Cannot leak variable that is not refcounted", line);
+        return ptn_null();
+    }
+
+    /* PORT NOTE: php-src's zend_test helper intentionally leaks one zval ref. */
+    PtnValue leaked = ptn_value_clone(args[0]);
+    (void)leaked;
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_zend_test_is_pcre_bundled(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -248449,6 +248484,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "xmlwriter_write_pi", 3, 3, ptn_internal_xmlwriter_write_pi },
         { "xmlwriter_write_raw", 2, 2, ptn_internal_xmlwriter_write_raw },
         { "zend_call_method_if_exists", 2, PTN_VARIADIC_ARGS, ptn_internal_zend_call_method_if_exists },
+        { "zend_leak_variable", 1, 1, ptn_internal_zend_leak_variable },
         { "zend_iterable", 1, 2, ptn_internal_zend_iterable },
         { "zend_number_or_string", 1, 1, ptn_internal_zend_number_or_string },
         { "zend_number_or_string_or_null", 1, 1, ptn_internal_zend_number_or_string_or_null },
@@ -248524,6 +248560,7 @@ static int ptn_internal_function_name_has_prefix(const char *name, const char *p
 
 static int ptn_internal_function_is_zend_test_helper(const char *name) {
     return ptn_ascii_case_equal(name, "zend_call_method_if_exists") ||
+        ptn_ascii_case_equal(name, "zend_leak_variable") ||
         ptn_ascii_case_equal(name, "zend_iterable") ||
         ptn_ascii_case_equal(name, "zend_number_or_string") ||
         ptn_ascii_case_equal(name, "zend_number_or_string_or_null") ||

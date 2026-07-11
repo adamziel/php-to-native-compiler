@@ -63282,6 +63282,50 @@ function invalid_target() {}
 }
 
 #[test]
+fn compile_zend_test_leak_variable_helper_to_native_binary() {
+    let root = temp_dir("ptn-native-zend-test-leak-variable-helper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-test-leak-variable-helper.php");
+    let output = root.join("zend-test-leak-variable-helper-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function (int $level, string $message) {\n\
+    echo $level, ':', $message, \"\\n\";\n\
+    return true;\n\
+});\n\
+var_dump(function_exists('zend_leak_variable'));\n\
+$stream = fopen('php://temp', 'w+');\n\
+$array = ['value'];\n\
+$object = new stdClass();\n\
+zend_leak_variable($stream);\n\
+zend_leak_variable('string');\n\
+zend_leak_variable($array);\n\
+zend_leak_variable($object);\n\
+zend_leak_variable(123);\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "2:Cannot leak variable that is not refcounted\n",
+            "done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zend_leak_variable"));
+}
+
+#[test]
 fn compile_zend_test_deprecated_constant_fetches_to_native_binary() {
     let root = temp_dir("ptn-native-zend-test-deprecated-constant-fetches");
     fs::create_dir_all(&root).unwrap();
