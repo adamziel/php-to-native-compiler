@@ -271,19 +271,26 @@ def timestamp() -> str:
     return dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    temp.replace(path)
+
+
 def write_results(path: Path, results: list[Result]) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(
-            "index\trows\tfirst_row\tlast_row\tstate\texit_code\telapsed_ms\ttests\tpassed\tfailed\t"
-            "skipped\twarned\ttimed_out\tcrashed\n"
+    lines = [
+        "index\trows\tfirst_row\tlast_row\tstate\texit_code\telapsed_ms\ttests\tpassed\tfailed\t"
+        "skipped\twarned\ttimed_out\tcrashed"
+    ]
+    for item in sorted(results, key=lambda result: result.index):
+        lines.append(
+            f"{item.index}\t{item.rows}\t{item.first_rel}\t{item.last_rel}\t"
+            f"{item.state}\t{item.exit_code}\t"
+            f"{item.elapsed_ms}\t{item.tests}\t{item.passed}\t{item.failed}\t"
+            f"{item.skipped}\t{item.warned}\t{item.timed_out}\t{item.crashed}"
         )
-        for item in sorted(results, key=lambda result: result.index):
-            handle.write(
-                f"{item.index}\t{item.rows}\t{item.first_rel}\t{item.last_rel}\t"
-                f"{item.state}\t{item.exit_code}\t"
-                f"{item.elapsed_ms}\t{item.tests}\t{item.passed}\t{item.failed}\t"
-                f"{item.skipped}\t{item.warned}\t{item.timed_out}\t{item.crashed}\n"
-            )
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def write_summary(
@@ -298,6 +305,7 @@ def write_summary(
     workers: int,
     batch_size: int,
     timeout_seconds: int,
+    run_tests_exit: int | None,
 ) -> None:
     commit = git_output(["rev-parse", "--short=12", "HEAD"], root)
     corpus_revision = git_output(["rev-parse", "HEAD"], php_src)
@@ -318,28 +326,50 @@ def write_summary(
         f"runnable-manifest: {manifest}",
         (
             f"command: tools/run-phpt-isolated-manifest.py --timeout {timeout_seconds} "
-            f"--workers {workers} --out-dir {path.parent} {manifest}"
+            f"--workers {workers} --batch-size {batch_size} --out-dir {path.parent} {manifest}"
         ),
         f"timeout-seconds: {timeout_seconds}",
         f"row-workers: {workers}",
         f"batch-size: {batch_size}",
+        f"checkpoint-complete: {'yes' if run_tests_exit is not None else 'no'}",
         f"count: {selected} selected PHPT rows; {selected} runnable; 0 excluded by classification in 1 buckets",
         "classification: enabled=0 selected={0} runnable={0} excluded=0".format(selected),
         f"classification-files: all={manifest} runnable={manifest} classification= excluded=",
         (
             f"bucket: manifest selected={selected} runnable={selected} tests={tests} "
             f"passed={passed} failed={failed} skipped={skipped} warned={warned} "
-            f"elapsed={elapsed}s run-tests-exit=0 log={row_results}"
+            f"elapsed={elapsed}s run-tests-exit={run_tests_exit if run_tests_exit is not None else 'incomplete'} "
+            f"log={row_results}"
         ),
         (
             f"result: buckets=1 selected={selected} runnable={selected} excluded=0 "
             f"tests={tests} passed={passed} failed={failed} skipped={skipped} "
             f"warned={warned} elapsed={elapsed}s timed_out={timed_out} crashed={crashed}"
         ),
-        "run-tests-exit: 0",
-        "",
     ]
-    path.write_text("\n".join(lines), encoding="utf-8")
+    if run_tests_exit is not None:
+        lines.append(f"run-tests-exit: {run_tests_exit}")
+    lines.append("")
+    atomic_write_text(path, "\n".join(lines))
+
+
+def chunk_exception_result(chunk: list[Row], exc: Exception) -> Result:
+    return Result(
+        index=chunk[0].index,
+        rows=len(chunk),
+        first_rel=chunk[0].rel,
+        last_rel=chunk[-1].rel,
+        state=f"runner-error-{type(exc).__name__}",
+        exit_code=type(exc).__name__,
+        elapsed_ms=0,
+        tests=len(chunk),
+        passed=0,
+        failed=len(chunk),
+        skipped=0,
+        warned=0,
+        timed_out=0,
+        crashed=1,
+    )
 
 
 def main() -> int:
@@ -367,6 +397,28 @@ def main() -> int:
     )
     start = time.monotonic()
     results: list[Result] = []
+    live_row_results = args.out_dir / "row-results-000-live.tsv"
+    live_summary = args.out_dir / "summary-000-live.txt"
+
+    def write_live_checkpoint() -> None:
+        elapsed = int(time.monotonic() - start)
+        write_results(live_row_results, results)
+        write_summary(
+            live_summary,
+            stamp,
+            root,
+            php_src,
+            args.manifest.resolve(),
+            live_row_results.resolve(),
+            results,
+            elapsed,
+            args.workers,
+            args.batch_size,
+            args.timeout,
+            run_tests_exit=None,
+        )
+
+    write_live_checkpoint()
     next_progress = time.monotonic() + 60
     completed_rows = 0
     chunks = chunk_rows(rows, args.batch_size)
@@ -376,9 +428,13 @@ def main() -> int:
             for chunk in chunks
         }
         for future in concurrent.futures.as_completed(futures):
-            batch_results = future.result()
+            try:
+                batch_results = future.result()
+            except Exception as exc:
+                batch_results = [chunk_exception_result(futures[future], exc)]
             results.extend(batch_results)
             completed_rows += sum(item.rows for item in batch_results)
+            write_live_checkpoint()
             now = time.monotonic()
             if now >= next_progress:
                 print(
@@ -403,6 +459,21 @@ def main() -> int:
         args.workers,
         args.batch_size,
         args.timeout,
+        run_tests_exit=0,
+    )
+    write_summary(
+        live_summary,
+        stamp,
+        root,
+        php_src,
+        args.manifest.resolve(),
+        live_row_results.resolve(),
+        results,
+        elapsed,
+        args.workers,
+        args.batch_size,
+        args.timeout,
+        run_tests_exit=0,
     )
     (args.out_dir / "shard-exit-code.txt").write_text("0\n", encoding="utf-8")
     selected = sum(item.rows for item in results)

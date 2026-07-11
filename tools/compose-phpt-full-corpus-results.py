@@ -33,6 +33,8 @@ class ShardSummary:
     failed: int = 0
     skipped: int = 0
     warned: int = 0
+    timed_out: int = 0
+    crashed: int = 0
     run_tests_exit: int | None = None
     exclusions_by_category: Counter[str] = field(default_factory=Counter)
     run_logs: list[str] = field(default_factory=list)
@@ -160,6 +162,8 @@ def parse_summary(path: Path) -> ShardSummary:
             summary.failed = int_value(values, "failed")
             summary.skipped = int_value(values, "skipped")
             summary.warned = int_value(values, "warned")
+            summary.timed_out = int_value(values, "timed_out")
+            summary.crashed = int_value(values, "crashed")
         elif line.startswith("classification.") and ": rows=" in line:
             category = line.split(":", 1)[0].removeprefix("classification.")
             values = parse_key_values(line)
@@ -197,6 +201,8 @@ def summary_to_dict(summary: ShardSummary) -> dict[str, object]:
         "failed": summary.failed,
         "skipped": summary.skipped,
         "warned": summary.warned,
+        "timed_out": summary.timed_out,
+        "crashed": summary.crashed,
         "run_tests_exit": summary.run_tests_exit,
         "exclusions_by_category": dict(summary.exclusions_by_category),
         "run_logs": summary.run_logs,
@@ -238,9 +244,28 @@ def main() -> int:
     failed = sum(item.failed for item in complete_summaries)
     skipped = sum(item.skipped for item in complete_summaries)
     warned = sum(item.warned for item in complete_summaries)
+    timed_out = sum(item.timed_out for item in complete_summaries)
+    crashed = sum(item.crashed for item in complete_summaries)
     incomplete_selected = sum(item.selected for item in incomplete_summaries)
     incomplete_runnable = sum(item.runnable for item in incomplete_summaries)
     incomplete_excluded = sum(item.excluded for item in incomplete_summaries)
+    incomplete_tests = sum(item.tests for item in incomplete_summaries)
+    incomplete_passed = sum(item.passed for item in incomplete_summaries)
+    incomplete_failed = sum(item.failed for item in incomplete_summaries)
+    incomplete_skipped = sum(item.skipped for item in incomplete_summaries)
+    incomplete_warned = sum(item.warned for item in incomplete_summaries)
+    incomplete_timed_out = sum(item.timed_out for item in incomplete_summaries)
+    incomplete_crashed = sum(item.crashed for item in incomplete_summaries)
+    checkpoint_summaries = list(by_shard.values())
+    checkpoint_selected = sum(item.selected for item in checkpoint_summaries)
+    checkpoint_runnable = sum(item.runnable for item in checkpoint_summaries)
+    checkpoint_tests = sum(item.tests for item in checkpoint_summaries)
+    checkpoint_passed = sum(item.passed for item in checkpoint_summaries)
+    checkpoint_failed = sum(item.failed for item in checkpoint_summaries)
+    checkpoint_skipped = sum(item.skipped for item in checkpoint_summaries)
+    checkpoint_warned = sum(item.warned for item in checkpoint_summaries)
+    checkpoint_timed_out = sum(item.timed_out for item in checkpoint_summaries)
+    checkpoint_crashed = sum(item.crashed for item in checkpoint_summaries)
     nonzero = sum(
         1
         for item in by_shard.values()
@@ -274,6 +299,8 @@ def main() -> int:
             "failed": failed,
             "skipped": skipped,
             "warned": warned,
+            "timed_out": timed_out,
+            "crashed": crashed,
             "not_passing_corpus_rows": max(selected - passed, 0),
             "pass_rate_of_corpus": percent(passed, selected),
             "pass_rate_of_runnable": percent(passed, runnable),
@@ -281,6 +308,23 @@ def main() -> int:
             "incomplete_selected": incomplete_selected,
             "incomplete_runnable": incomplete_runnable,
             "incomplete_excluded": incomplete_excluded,
+            "incomplete_tests": incomplete_tests,
+            "incomplete_passed": incomplete_passed,
+            "incomplete_failed": incomplete_failed,
+            "incomplete_skipped": incomplete_skipped,
+            "incomplete_warned": incomplete_warned,
+            "incomplete_timed_out": incomplete_timed_out,
+            "incomplete_crashed": incomplete_crashed,
+            "checkpoint_selected": checkpoint_selected,
+            "checkpoint_runnable": checkpoint_runnable,
+            "checkpoint_tests": checkpoint_tests,
+            "checkpoint_passed": checkpoint_passed,
+            "checkpoint_failed": checkpoint_failed,
+            "checkpoint_skipped": checkpoint_skipped,
+            "checkpoint_warned": checkpoint_warned,
+            "checkpoint_timed_out": checkpoint_timed_out,
+            "checkpoint_crashed": checkpoint_crashed,
+            "checkpoint_pass_rate": percent(checkpoint_passed, checkpoint_selected),
         },
         "commits": dict(commits),
         "corpus_revisions": dict(corpus_revisions),
@@ -309,6 +353,8 @@ def main() -> int:
         f"| Failed tests | {failed} |",
         f"| Skipped tests | {skipped} |",
         f"| Warned tests | {warned} |",
+        f"| Timed-out tests | {timed_out} |",
+        f"| Crashed/no-summary batches | {crashed} |",
         f"| Not passing corpus rows | {max(selected - passed, 0)} |",
         f"| Pass rate of corpus | {percent(passed, selected)} |",
         f"| Pass rate of runnable rows | {percent(passed, runnable)} |",
@@ -316,6 +362,17 @@ def main() -> int:
         f"| Rows in incomplete shard summaries | {incomplete_selected} |",
         f"| Runnable rows in incomplete shard summaries | {incomplete_runnable} |",
         f"| Exclusions in incomplete shard summaries | {incomplete_excluded} |",
+        f"| Tests in incomplete shard checkpoints | {incomplete_tests} |",
+        f"| Passed tests in incomplete shard checkpoints | {incomplete_passed} |",
+        f"| Failed tests in incomplete shard checkpoints | {incomplete_failed} |",
+        f"| Skipped tests in incomplete shard checkpoints | {incomplete_skipped} |",
+        f"| Warned tests in incomplete shard checkpoints | {incomplete_warned} |",
+        f"| Timed-out tests in incomplete shard checkpoints | {incomplete_timed_out} |",
+        f"| Crashed/no-summary batches in incomplete shard checkpoints | {incomplete_crashed} |",
+        f"| Checkpoint reported rows | {checkpoint_selected} |",
+        f"| Checkpoint passed tests | {checkpoint_passed} |",
+        f"| Checkpoint failed tests | {checkpoint_failed} |",
+        f"| Checkpoint pass rate | {percent(checkpoint_passed, checkpoint_selected)} |",
         "",
     ]
 
@@ -365,8 +422,8 @@ def main() -> int:
                 "",
                 "These shards wrote a header but did not reach `run-tests-exit`; they are usually canceled or runner-terminated and are excluded from pass-rate totals.",
                 "",
-                "| Shard | Selected | Runnable | Excluded | Summary |",
-                "| ---: | ---: | ---: | ---: | --- |",
+                "| Shard | Selected | Passed | Failed | Skipped | Warned | Timed out | Crashed | Summary |",
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
             ]
         )
         for item in sorted(
@@ -375,8 +432,9 @@ def main() -> int:
         ):
             shard = "" if item.shard is None else str(item.shard)
             lines.append(
-                f"| {shard} | {item.selected} | {item.runnable} | "
-                f"{item.excluded} | `{item.path}` |"
+                f"| {shard} | {item.selected} | {item.passed} | {item.failed} | "
+                f"{item.skipped} | {item.warned} | {item.timed_out} | "
+                f"{item.crashed} | `{item.path}` |"
             )
         lines.append("")
 
