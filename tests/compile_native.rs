@@ -90719,6 +90719,74 @@ var_dump((new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0, 'classmap
 }
 
 #[test]
+fn compile_soap_wsdl_without_service_throws_bind_fault_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-without-service-bind-fault");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-without-service-bind-fault.php");
+    let output = root.join("soap-wsdl-without-service-bind-fault-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = <<<'WSDL'
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:db="http://xmlns.oracle.com/apps/fnd/soaprovider/plsql/example/"
+    targetNamespace="http://xmlns.oracle.com/apps/fnd/soaprovider/plsql/example/"
+    elementFormDefault="qualified">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/types">
+      <complexType name="APPS.EXAMPLE_TYPE">
+        <sequence>
+          <element name="ITEM_NUMBER" minOccurs="0" nillable="true" db:type="VARCHAR2">
+            <simpleType>
+              <restriction base="string">
+                <maxLength value="40"/>
+              </restriction>
+            </simpleType>
+          </element>
+        </sequence>
+      </complexType>
+    </schema>
+  </types>
+</definitions>
+WSDL;
+
+$path = __DIR__ . '/missing-service.wsdl';
+file_put_contents($path, $wsdl);
+
+try {
+    new SoapClient($path, ['cache_wsdl' => WSDL_CACHE_NONE]);
+    echo "no fault\n";
+} catch (SoapFault $e) {
+    echo get_class($e), "\n";
+    echo $e->faultstring, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "SoapFault\nSOAP-ERROR: Parsing WSDL: Couldn't bind to service\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_wsdl_has_service"));
+    assert!(c_source.contains("ptn_soap_throw_wsdl_bind_error"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_integer_ranges_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-integer-ranges");
     fs::create_dir_all(&root).unwrap();

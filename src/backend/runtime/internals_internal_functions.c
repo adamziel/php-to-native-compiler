@@ -234005,27 +234005,50 @@ static int ptn_soap_throw_wsdl_bind_error(
     size_t constructor_argc,
     const PtnValue *constructor_args
 ) {
-    if (constructor_args != NULL) {
-        ptn_throw_exception_owned_message_at_with_trace_frame(
-            runtime,
-            "SoapFault",
-            ptn_duplicate_string("[WSDL] SOAP-ERROR: Parsing WSDL: Couldn't bind to service"),
-            runtime == NULL ? NULL : runtime->source_path,
-            line,
-            "SoapClient->__construct",
-            runtime == NULL ? NULL : runtime->source_path,
-            line,
-            constructor_argc,
-            constructor_args
-        );
-    } else {
-        ptn_throw_exception_at(
-            runtime,
-            "SoapFault",
-            "[WSDL] SOAP-ERROR: Parsing WSDL: Couldn't bind to service",
-            runtime == NULL ? NULL : runtime->source_path,
-            line
-        );
+    (void)constructor_argc;
+    (void)constructor_args;
+    PtnValue code = ptn_owned_string(ptn_duplicate_string("WSDL"));
+    PtnValue message = ptn_owned_string(
+        ptn_duplicate_string("SOAP-ERROR: Parsing WSDL: Couldn't bind to service")
+    );
+    PtnValue args[2] = {
+        ptn_value_share(code),
+        ptn_value_share(message)
+    };
+    PtnValue fault = ptn_new_object(runtime, "SoapFault", 2, args, line);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    ptn_value_destroy(&code);
+    ptn_value_destroy(&message);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&fault);
+        return 0;
+    }
+    PtnValue thrown = ptn_throw_value(runtime, fault, runtime == NULL ? NULL : runtime->source_path, line);
+    ptn_value_destroy(&thrown);
+    ptn_value_destroy(&fault);
+    return 0;
+}
+
+static int ptn_soap_wsdl_has_service(PtnSoapClientData *data) {
+    if (data == NULL || data->wsdl == NULL) {
+        return 0;
+    }
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            break;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            break;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "service")) {
+            return 1;
+        }
+        cursor = tag_end;
     }
     return 0;
 }
@@ -234355,6 +234378,9 @@ static int ptn_soap_client_load_wsdl(
         data->target_namespace = ptn_soap_first_attr_from_tag_name(data, "schema", "targetNamespace");
     }
     data->location = ptn_soap_first_attr_from_tag_name(data, "address", "location");
+    if (!ptn_soap_wsdl_has_service(data)) {
+        return ptn_soap_throw_wsdl_bind_error(runtime, line, constructor_argc, constructor_args);
+    }
     if (!ptn_soap_validate_wsdl_schema_imports(
             runtime,
             data,
