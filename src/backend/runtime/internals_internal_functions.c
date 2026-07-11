@@ -58569,12 +58569,21 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     }
     const char *method_name = data->is_directory ? "dir_closedir" : "stream_close";
     if (data->suppress_close_callback_on_unwind) {
-        /*
-         * PORT NOTE: php-src can destroy internally-owned wrapper streams while
-         * unwinding from a wrapper callback exception; that cleanup does not
-         * invoke stream_close.
-         */
-        return;
+        PtnRuntime *root = ptn_runtime_root(data->runtime);
+        if (root != NULL && root->fatal_error_shutdown) {
+            /*
+             * PORT NOTE: a fatal raised while an include stream callback is
+             * active still lets request shutdown invoke user stream_close().
+             */
+            data->suppress_close_callback_on_unwind = 0;
+        } else {
+            /*
+             * PORT NOTE: php-src can destroy internally-owned wrapper streams
+             * while unwinding from a wrapper callback exception; that cleanup
+             * does not invoke stream_close.
+             */
+            return;
+        }
     }
     if (data->runtime->exceptions != NULL && data->runtime->exceptions->active_exception != NULL) {
         /*
