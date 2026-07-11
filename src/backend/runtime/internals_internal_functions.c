@@ -139117,6 +139117,7 @@ static int ptn_ini_expand_text(
     int *syntax_ok
 ) {
     int last_concat_token = 0;
+    int last_concat_token_was_constant = 0;
     for (size_t i = 0; i < text.len; i++) {
         char c = text.data[i];
         if (c == '$' && i + 1 < text.len && text.data[i + 1] == '{') {
@@ -139146,9 +139147,11 @@ static int ptn_ini_expand_text(
                 return 0;
             }
             last_concat_token = 1;
+            last_concat_token_was_constant = 0;
             continue;
         }
         if (substitute_constants && isspace((unsigned char)c)) {
+            size_t whitespace_start = i;
             size_t lookahead = i + 1;
             while (lookahead < text.len && isspace((unsigned char)text.data[lookahead])) {
                 lookahead++;
@@ -139171,12 +139174,19 @@ static int ptn_ini_expand_text(
                 int is_constant = ptn_runtime_constant_value(runtime, name_copy, &constant);
                 free(name_copy);
                 if (is_constant) {
-                    ptn_value_destroy(&constant);
+                    if (last_concat_token_was_constant) {
+                        ptn_string_buffer_append_len(buffer, text.data + whitespace_start, lookahead - whitespace_start);
+                        last_concat_token = 0;
+                        last_concat_token_was_constant = 0;
+                    }
                     i = lookahead - 1;
+                    ptn_value_destroy(&constant);
                     continue;
                 }
                 ptn_string_buffer_append_char(buffer, ' ');
                 i = lookahead - 1;
+                last_concat_token = 0;
+                last_concat_token_was_constant = 0;
                 continue;
             }
         }
@@ -139202,6 +139212,7 @@ static int ptn_ini_expand_text(
             }
             i = cursor;
             last_concat_token = 1;
+            last_concat_token_was_constant = 0;
             continue;
         }
         if (substitute_constants && scanner_mode != PTN_INI_SCANNER_RAW && ptn_ini_is_name_start((unsigned char)c)) {
@@ -139220,16 +139231,19 @@ static int ptn_ini_expand_text(
                     return 0;
                 }
                 last_concat_token = 1;
+                last_concat_token_was_constant = 1;
             } else {
                 ptn_string_buffer_append_len(buffer, name.data, name.len);
                 free(name_copy);
                 last_concat_token = 0;
+                last_concat_token_was_constant = 0;
             }
             i--;
             continue;
         }
         ptn_string_buffer_append_char(buffer, c);
         last_concat_token = 0;
+        last_concat_token_was_constant = 0;
     }
     return *syntax_ok;
 }
@@ -161881,7 +161895,7 @@ static void ptn_output_rewrite_var_store(
         return;
     }
     if (root->output_rewrite_vars_len == 0) {
-        root->output_rewrite_vars_before_trans_sid = ptn_session_trans_sid_output_enabled(runtime);
+        root->output_rewrite_vars_before_trans_sid = !ptn_session_trans_sid_output_enabled(runtime);
     }
     char *stored_name = ptn_output_rewrite_upper_copy(name);
     char *stored_value = ptn_output_rewrite_upper_copy(value);
