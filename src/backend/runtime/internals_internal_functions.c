@@ -222065,6 +222065,245 @@ static PtnValue ptn_intl_char_get_numeric_value(
     return ptn_float(-123456789.0);
 }
 
+typedef int8_t PtnIcuUBool;
+typedef int32_t PtnIcuUChar32;
+typedef int PtnIcuUCharCategory;
+typedef PtnIcuUBool (*PtnIcuEnumCharTypesCallback)(
+    const void *context,
+    PtnIcuUChar32 start,
+    PtnIcuUChar32 limit,
+    PtnIcuUCharCategory type
+);
+typedef void (*PtnIcuEnumCharTypesFn)(
+    PtnIcuEnumCharTypesCallback callback,
+    const void *context
+);
+
+typedef struct {
+    PtnRuntime *runtime;
+    PtnValue callback;
+    size_t line;
+    int ok;
+} PtnIntlCharEnumTypesContext;
+
+static void *ptn_intl_char_open_icu_handle_from_nix_store(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    DIR *dir = opendir("/nix/store");
+    if (dir == NULL) {
+        return NULL;
+    }
+    void *handle = NULL;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *name = entry->d_name;
+        if (strstr(name, "-icu4c-") == NULL || strstr(name, "-dev") != NULL) {
+            continue;
+        }
+        char path[4096];
+        int written = snprintf(path, sizeof(path), "/nix/store/%s/lib/libicuuc.so", name);
+        if (written < 0 || (size_t)written >= sizeof(path)) {
+            continue;
+        }
+        handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            break;
+        }
+    }
+    closedir(dir);
+    return handle;
+#endif
+}
+
+static PtnIcuEnumCharTypesFn ptn_intl_char_load_icu_enum_char_types(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    static int attempted = 0;
+    static void *handle = NULL;
+    static PtnIcuEnumCharTypesFn cached = NULL;
+    if (attempted) {
+        return cached;
+    }
+    attempted = 1;
+
+    const char *env_path = getenv("PTN_ICUUC_LIBRARY");
+    if (env_path != NULL && env_path[0] != '\0') {
+        handle = dlopen(env_path, RTLD_LAZY | RTLD_LOCAL);
+    }
+    const char *const library_names[] = {
+        "libicuuc.so",
+        "libicuuc.so.80",
+        "libicuuc.so.79",
+        "libicuuc.so.78",
+        "libicuuc.so.77",
+        "libicuuc.so.76",
+        "libicuuc.so.75",
+        "libicuuc.so.74",
+        "libicuuc.so.73",
+        "libicuuc.so.72",
+        "libicuuc.so.71",
+        "libicuuc.so.70",
+    };
+    for (size_t i = 0; handle == NULL && i < sizeof(library_names) / sizeof(library_names[0]); i++) {
+        handle = dlopen(library_names[i], RTLD_LAZY | RTLD_LOCAL);
+    }
+    if (handle == NULL) {
+        handle = ptn_intl_char_open_icu_handle_from_nix_store();
+    }
+    if (handle == NULL) {
+        return NULL;
+    }
+
+    const char *const symbol_names[] = {
+        "u_enumCharTypes",
+        "u_enumCharTypes_80",
+        "u_enumCharTypes_79",
+        "u_enumCharTypes_78",
+        "u_enumCharTypes_77",
+        "u_enumCharTypes_76",
+        "u_enumCharTypes_75",
+        "u_enumCharTypes_74",
+        "u_enumCharTypes_73",
+        "u_enumCharTypes_72",
+        "u_enumCharTypes_71",
+        "u_enumCharTypes_70",
+    };
+    for (size_t i = 0; i < sizeof(symbol_names) / sizeof(symbol_names[0]); i++) {
+        cached = (PtnIcuEnumCharTypesFn)dlsym(handle, symbol_names[i]);
+        if (cached != NULL) {
+            return cached;
+        }
+    }
+    return NULL;
+#endif
+}
+
+static int ptn_intl_char_enum_char_types_invoke_callback(
+    PtnIntlCharEnumTypesContext *context,
+    PtnIcuUChar32 start,
+    PtnIcuUChar32 limit,
+    PtnIcuUCharCategory type
+) {
+    if (!context->ok || context->runtime->exceptions->active_exception != NULL) {
+        context->ok = 0;
+        return 0;
+    }
+
+    PtnValue callback_args[3] = {
+        ptn_int(start),
+        ptn_int(limit),
+        ptn_int(type),
+    };
+    PtnValue result = ptn_null();
+    int ok = ptn_internal_call_callback_capturing_exception(
+        context->runtime,
+        context->callback,
+        3,
+        callback_args,
+        context->line,
+        &result
+    );
+    ptn_value_destroy(&result);
+    if (!ok || context->runtime->exceptions->active_exception != NULL) {
+        context->ok = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static PtnIcuUBool ptn_intl_char_enum_char_types_icu_callback(
+    const void *context,
+    PtnIcuUChar32 start,
+    PtnIcuUChar32 limit,
+    PtnIcuUCharCategory type
+) {
+    return ptn_intl_char_enum_char_types_invoke_callback(
+        (PtnIntlCharEnumTypesContext *)context,
+        start,
+        limit,
+        type
+    )
+        ? 1
+        : 0;
+}
+
+static void ptn_intl_char_enum_char_types_fallback(PtnIntlCharEnumTypesContext *context) {
+    typedef struct {
+        PtnIcuUChar32 start;
+        PtnIcuUChar32 limit;
+        PtnIcuUCharCategory type;
+    } PtnIntlCharTypeRange;
+    /* TODO(port-semantic): Prefer ICU u_enumCharTypes; this ASCII-shaped table is
+     * only a no-ICU fallback for environments that still expose IntlChar. */
+    static const PtnIntlCharTypeRange fallback_ranges[] = {
+        { 0x0000, 0x0020, 15 },
+        { 0x0020, 0x0021, 12 },
+        { 0x0021, 0x0030, 23 },
+        { 0x0030, 0x003a, 9 },
+        { 0x003a, 0x0041, 23 },
+        { 0x0041, 0x005b, 1 },
+        { 0x005b, 0x0061, 23 },
+        { 0x0061, 0x007b, 2 },
+        { 0x007b, 0x007f, 23 },
+        { 0x007f, 0x110000, 0 },
+    };
+    for (size_t i = 0; i < sizeof(fallback_ranges) / sizeof(fallback_ranges[0]); i++) {
+        if (!ptn_intl_char_enum_char_types_invoke_callback(
+                context,
+                fallback_ranges[i].start,
+                fallback_ranges[i].limit,
+                fallback_ranges[i].type
+            )) {
+            return;
+        }
+    }
+}
+
+static PtnValue ptn_intl_char_enum_char_types(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        ptn_intl_char_throw_argument_count(runtime, "IntlChar::enumCharTypes", 1, 1, argc);
+        return ptn_null();
+    }
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "IntlChar::enumCharTypes",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnIntlCharEnumTypesContext context = {
+        runtime,
+        callback,
+        line,
+        1,
+    };
+    PtnIcuEnumCharTypesFn enum_char_types = ptn_intl_char_load_icu_enum_char_types();
+    if (enum_char_types != NULL) {
+        /* PORT NOTE: php-src IntlChar::enumCharTypes is a thin wrapper around
+         * ICU u_enumCharTypes and invokes the user callback with start, limit,
+         * and UCharCategory for each contiguous range. */
+        enum_char_types(ptn_intl_char_enum_char_types_icu_callback, &context);
+    } else {
+        ptn_intl_char_enum_char_types_fallback(&context);
+    }
+    ptn_value_destroy(&callback);
+    if (!context.ok && runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+    }
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
@@ -222113,6 +222352,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
     }
     if (ptn_ascii_case_equal(class_name, "IntlChar")) {
+        if (ptn_ascii_case_equal(name, "enumCharTypes")) {
+            return ptn_intl_char_enum_char_types(runtime, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "foldCase")) {
             return ptn_intl_char_fold_case(runtime, argc, args, line);
         }
@@ -252662,7 +252904,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getErrorMessage");
     }
     if (ptn_internal_class_name_is_intl_char(class_name)) {
-        return ptn_ascii_case_equal(method_name, "foldCase")
+        return ptn_ascii_case_equal(method_name, "enumCharTypes")
+            || ptn_ascii_case_equal(method_name, "foldCase")
             || ptn_ascii_case_equal(method_name, "forDigit")
             || ptn_ascii_case_equal(method_name, "getNumericValue");
     }
@@ -253336,7 +253579,8 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
         return ptn_ascii_case_equal(method_name, "formatObject");
     }
     if (ptn_internal_class_name_is_intl_char(class_name)) {
-        return ptn_ascii_case_equal(method_name, "foldCase")
+        return ptn_ascii_case_equal(method_name, "enumCharTypes")
+            || ptn_ascii_case_equal(method_name, "foldCase")
             || ptn_ascii_case_equal(method_name, "forDigit")
             || ptn_ascii_case_equal(method_name, "getNumericValue");
     }
@@ -254140,6 +254384,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_intl_char(class_name)) {
         static const char *const names[] = {
+            "enumCharTypes",
             "foldCase",
             "forDigit",
             "getNumericValue",
@@ -258665,6 +258910,9 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
         return data->closure_metadata;
     }
     if (ptn_internal_class_name_is_intl_char(data->class_name)) {
+        static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_ENUM_CHAR_TYPES_PARAMETERS[] = {
+            { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        };
         static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_FOLD_CASE_PARAMETERS[] = {
             { "codepoint", NULL, "int|string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
             { "options", "int", "int", 0, 1, 0, 0, 1, "IntlChar::FOLD_CASE_DEFAULT", "IntlChar::FOLD_CASE_DEFAULT", NULL },
@@ -258676,6 +258924,24 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
         static const PtnParameterMetadata PTN_INTERNAL_INTL_CHAR_CODEPOINT_PARAMETERS[] = {
             { "codepoint", NULL, "int|string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
         };
+        if (ptn_ascii_case_equal(data->name, "enumCharTypes")) {
+            return ptn_function_metadata_with_tentative_return(
+                ptn_function_metadata_found(
+                    "IntlChar::enumCharTypes",
+                    1,
+                    sizeof(PTN_INTERNAL_INTL_CHAR_ENUM_CHAR_TYPES_PARAMETERS) /
+                        sizeof(PTN_INTERNAL_INTL_CHAR_ENUM_CHAR_TYPES_PARAMETERS[0]),
+                    1,
+                    0,
+                    PTN_INTERNAL_INTL_CHAR_ENUM_CHAR_TYPES_PARAMETERS,
+                    0,
+                    "void",
+                    "void",
+                    0,
+                    1
+                )
+            );
+        }
         if (ptn_ascii_case_equal(data->name, "foldCase")) {
             return ptn_function_metadata_with_tentative_return(
                 ptn_function_metadata_found(
