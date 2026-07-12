@@ -31,6 +31,10 @@ on:
         description: Optional repo-relative PHPT manifest for continuation runs
         required: false
         default: ""
+      runner_mode:
+        description: PHPT runner mode: stream for broad harvests, isolated for crash reduction
+        required: true
+        default: "stream"
 
 permissions:
   contents: read
@@ -170,6 +174,7 @@ jobs:
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: ${{ inputs.shard_timeout_minutes }}
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
+          PTN_PHPT_RUNNER_MODE: ${{ inputs.runner_mode }}
           PHPC_BIN: ${{ github.workspace }}/.runtime/phpc-bin/phpc
         run: |
           set +e
@@ -191,22 +196,40 @@ jobs:
           batch_size = os.environ["PTN_PHPT_BATCH_SIZE"]
           test_timeout = os.environ["PTN_PHPT_TEST_TIMEOUT"]
           phpc_bin = os.environ["PHPC_BIN"]
+          runner_mode = os.environ.get("PTN_PHPT_RUNNER_MODE", "stream")
           timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
-          command = [
-              "python3",
-              "tools/run-phpt-isolated-manifest.py",
-              "--timeout",
-              test_timeout,
-              "--workers",
-              worker_count,
-              "--batch-size",
-              batch_size,
-              "--phpc-bin",
-              phpc_bin,
-              "--out-dir",
-              str(progress_dir),
-              shard_manifest,
-          ]
+          if runner_mode == "stream":
+              command = [
+                  "python3",
+                  "tools/run-phpt-stream-manifest.py",
+                  "--timeout",
+                  test_timeout,
+                  "--workers",
+                  worker_count,
+                  "--phpc-bin",
+                  phpc_bin,
+                  "--out-dir",
+                  str(progress_dir),
+                  shard_manifest,
+              ]
+          elif runner_mode == "isolated":
+              command = [
+                  "python3",
+                  "tools/run-phpt-isolated-manifest.py",
+                  "--timeout",
+                  test_timeout,
+                  "--workers",
+                  worker_count,
+                  "--batch-size",
+                  batch_size,
+                  "--phpc-bin",
+                  phpc_bin,
+                  "--out-dir",
+                  str(progress_dir),
+                  shard_manifest,
+              ]
+          else:
+              raise SystemExit(f"unknown PTN_PHPT_RUNNER_MODE: {runner_mode}")
 
           def timestamp() -> str:
               return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -361,6 +384,7 @@ jobs:
           PTN_PHPT_SHARD_TIMEOUT_MINUTES: ${{ inputs.shard_timeout_minutes }}
           PTN_PHPT_SHARD_INDEX: ${{ matrix.shard }}
           PTN_PHPT_SHARD_COUNT: ${{ inputs.shard_count }}
+          PTN_PHPT_RUNNER_MODE: ${{ inputs.runner_mode }}
           PHPC_BIN: ${{ github.workspace }}/.runtime/phpc-bin/phpc
         run: |
           set +e
@@ -382,22 +406,40 @@ jobs:
           batch_size = os.environ["PTN_PHPT_BATCH_SIZE"]
           test_timeout = os.environ["PTN_PHPT_TEST_TIMEOUT"]
           phpc_bin = os.environ["PHPC_BIN"]
+          runner_mode = os.environ.get("PTN_PHPT_RUNNER_MODE", "stream")
           timeout_seconds = int(os.environ.get("PTN_PHPT_SHARD_TIMEOUT_MINUTES", "120")) * 60
-          command = [
-              "python3",
-              "tools/run-phpt-isolated-manifest.py",
-              "--timeout",
-              test_timeout,
-              "--workers",
-              worker_count,
-              "--batch-size",
-              batch_size,
-              "--phpc-bin",
-              phpc_bin,
-              "--out-dir",
-              str(progress_dir),
-              shard_manifest,
-          ]
+          if runner_mode == "stream":
+              command = [
+                  "python3",
+                  "tools/run-phpt-stream-manifest.py",
+                  "--timeout",
+                  test_timeout,
+                  "--workers",
+                  worker_count,
+                  "--phpc-bin",
+                  phpc_bin,
+                  "--out-dir",
+                  str(progress_dir),
+                  shard_manifest,
+              ]
+          elif runner_mode == "isolated":
+              command = [
+                  "python3",
+                  "tools/run-phpt-isolated-manifest.py",
+                  "--timeout",
+                  test_timeout,
+                  "--workers",
+                  worker_count,
+                  "--batch-size",
+                  batch_size,
+                  "--phpc-bin",
+                  phpc_bin,
+                  "--out-dir",
+                  str(progress_dir),
+                  shard_manifest,
+              ]
+          else:
+              raise SystemExit(f"unknown PTN_PHPT_RUNNER_MODE: {runner_mode}")
 
           def timestamp() -> str:
               return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
