@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+run_dir="${1:-$repo_root/.runtime/local-full-phpt-current}"
+interval="${2:-5}"
+run_dir="$(cd "$run_dir" && pwd -P)"
+baseline="$run_dir/shards/baseline.tsv"
+plan="$run_dir/shards/plan.tsv"
+
+if [[ ! -f "$baseline" || ! -f "$plan" ]]; then
+  echo "sharded PHPT state is not initialized under: $run_dir" >&2
+  exit 1
+fi
+
+value() {
+  local key="$1"
+  local file="$2"
+  awk -F '\t' -v key="$key" '$1 == key { print $2; exit }' "$file"
+}
+
+while true; do
+  total="$(value total "$baseline")"
+  reported="$(value reported "$baseline")"
+  passed="$(value passed "$baseline")"
+  failed="$(value failed "$baseline")"
+  skipped="$(value skipped "$baseline")"
+  warned="$(value warned "$baseline")"
+  crashed="$(value crashed "$baseline")"
+
+  clear
+  printf 'PHPT local full run (sharded)\n'
+  printf 'run_dir: %s\n' "$run_dir"
+  printf '\n'
+
+  while IFS=$'\t' read -r shard shard_total manifest; do
+    [[ "$shard" == "shard" ]] && continue
+    shard_id="$(printf '%02d' "$shard")"
+    status="$run_dir/shards/shard-$shard_id/status.tsv"
+    shard_state="waiting"
+    shard_reported=0
+    shard_passed=0
+    shard_failed=0
+    shard_skipped=0
+    shard_warned=0
+    shard_crashed=0
+    shard_current=""
+    if [[ -f "$status" ]]; then
+      shard_state="$(value state "$status")"
+      shard_reported="$(value reported "$status")"
+      shard_passed="$(value passed "$status")"
+      shard_failed="$(value failed "$status")"
+      shard_skipped="$(value skipped "$status")"
+      shard_warned="$(value warned "$status")"
+      shard_crashed="$(value crashed "$status")"
+      shard_current="$(value current "$status")"
+    fi
+    reported=$((reported + shard_reported))
+    passed=$((passed + shard_passed))
+    failed=$((failed + shard_failed))
+    skipped=$((skipped + shard_skipped))
+    warned=$((warned + shard_warned))
+    crashed=$((crashed + shard_crashed))
+    printf 'shard %s: %-8s %5s / %-5s  %s\n' \
+      "$shard_id" "$shard_state" "$shard_reported" "$shard_total" "$shard_current"
+  done < "$plan"
+
+  percent="$(awk -v done="$reported" -v all="$total" 'BEGIN { printf "%.2f", 100 * done / all }')"
+  printf '\nreported: %s / %s (%s%%), remaining: %s\n' \
+    "$reported" "$total" "$percent" "$((total - reported))"
+  printf 'passed: %s  failed: %s  skipped: %s  warned: %s  crashed: %s\n' \
+    "$passed" "$failed" "$skipped" "$warned" "$crashed"
+  sleep "$interval"
+done

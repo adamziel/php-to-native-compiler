@@ -63,6 +63,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stream-batch-size", type=int, default=500)
     parser.add_argument("--stall-timeout", type=int, default=600)
     parser.add_argument("--single-wall-timeout", type=int, default=300)
+    parser.add_argument(
+        "--recover-one-row",
+        action="store_true",
+        help="run and checkpoint only the first unreported row, then exit",
+    )
     return parser.parse_args()
 
 
@@ -529,6 +534,38 @@ def main() -> int:
     results = load_existing_results(results_path, rows_by_rel)
     write_results(results_path, results)
 
+    if args.recover_one_row:
+        remaining = [row for row in rows if row.rel not in results]
+        if not remaining:
+            write_status(
+                status_path,
+                state="complete",
+                total=len(rows),
+                results=results,
+                mode="done",
+                current="",
+                last_row="",
+                last_state="",
+                started_at=started_at,
+                run_dir=args.out_dir.resolve(),
+            )
+            return 0
+        run_single_fallback(
+            row=remaining[0],
+            rows_by_rel=rows_by_rel,
+            results=results,
+            php_src=php_src,
+            phpc_bin=phpc_bin,
+            timeout=args.timeout,
+            wall_timeout=args.single_wall_timeout,
+            log_path=log_path,
+            status_path=status_path,
+            results_path=results_path,
+            started_at=started_at,
+            run_dir=args.out_dir.resolve(),
+        )
+        return 0
+
     while len(results) < len(rows):
         remaining = [row for row in rows if row.rel not in results]
         chunk = remaining[: args.stream_batch_size]
@@ -544,7 +581,7 @@ def main() -> int:
             started_at=started_at,
             run_dir=args.out_dir.resolve(),
         )
-        made_progress = run_stream_chunk(
+        run_stream_chunk(
             rows=chunk,
             rows_by_rel=rows_by_rel,
             results=results,
@@ -559,9 +596,10 @@ def main() -> int:
             started_at=started_at,
             run_dir=args.out_dir.resolve(),
         )
-        if made_progress == 0:
+        unreported_chunk_rows = [row for row in chunk if row.rel not in results]
+        if unreported_chunk_rows:
             run_single_fallback(
-                row=chunk[0],
+                row=unreported_chunk_rows[0],
                 rows_by_rel=rows_by_rel,
                 results=results,
                 php_src=php_src,
