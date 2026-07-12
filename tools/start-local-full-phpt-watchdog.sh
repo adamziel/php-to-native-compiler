@@ -22,6 +22,7 @@ jobs="${PTN_PHPT_JOBS:-8}"
 stream_batch_size="${PTN_PHPT_STREAM_BATCH_SIZE:-500}"
 stall_timeout="${PTN_PHPT_STALL_TIMEOUT:-600}"
 single_wall_timeout="${PTN_PHPT_SINGLE_WALL_TIMEOUT:-300}"
+quarantine_extension_on_crash="${PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH:-0}"
 
 if ! [[ "$interval" =~ ^[1-9][0-9]*$ ]]; then
   echo "PTN_PHPT_WATCHDOG_INTERVAL must be a positive number of seconds" >&2
@@ -42,6 +43,10 @@ manifest_args=()
 if [[ -n "\$manifest" ]]; then
   manifest_args=(--manifest "\$manifest")
 fi
+quarantine_args=()
+if [[ "$quarantine_extension_on_crash" == "1" ]]; then
+  quarantine_args=(--quarantine-extension-on-crash)
+fi
 primary_seen=0
 
 start_primary() {
@@ -57,6 +62,7 @@ start_primary() {
     PTN_PHPT_STREAM_BATCH_SIZE="$stream_batch_size" \\
     PTN_PHPT_STALL_TIMEOUT="$stall_timeout" \\
     PTN_PHPT_SINGLE_WALL_TIMEOUT="$single_wall_timeout" \\
+    PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH="$quarantine_extension_on_crash" \\
     tools/start-local-full-phpt-run.sh
 }
 
@@ -64,6 +70,7 @@ recover_one_row() {
   tools/run-phpt-local-stream-supervisor.py \\
     --out-dir "$run_dir" \\
     "\${manifest_args[@]}" \\
+    "\${quarantine_args[@]}" \\
     --php-src "$php_src" \\
     --phpc-bin "$phpc_bin" \\
     --timeout "$timeout_seconds" \\

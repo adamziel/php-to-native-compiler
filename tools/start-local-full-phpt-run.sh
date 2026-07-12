@@ -26,6 +26,7 @@ update_current_link="${PTN_PHPT_UPDATE_CURRENT_LINK:-1}"
 php_src="${PHP_SRC_PHPT:-/home/claude/php-src-phpt}"
 phpc_bin="${PHPC_BIN:-$repo_root/target/release/phpc}"
 manifest="${PTN_PHPT_MANIFEST:-}"
+quarantine_extension_on_crash="${PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH:-0}"
 timeout_seconds="${PTN_PHPT_TEST_TIMEOUT:-60}"
 jobs="${PTN_PHPT_JOBS:-8}"
 stream_batch_size="${PTN_PHPT_STREAM_BATCH_SIZE:-500}"
@@ -55,10 +56,15 @@ manifest_args=()
 if [[ -n "\$manifest" ]]; then
   manifest_args=(--manifest "\$manifest")
 fi
+quarantine_args=()
+if [[ "$quarantine_extension_on_crash" == "1" ]]; then
+  quarantine_args=(--quarantine-extension-on-crash)
+fi
 while true; do
   if tools/run-phpt-local-stream-supervisor.py \\
     --out-dir "$run_dir" \\
     "\${manifest_args[@]}" \\
+    "\${quarantine_args[@]}" \\
     --php-src "$php_src" \\
     --phpc-bin "$phpc_bin" \\
     --timeout "$timeout_seconds" \\

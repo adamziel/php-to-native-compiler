@@ -12,6 +12,7 @@ timeout_seconds="${PTN_PHPT_TEST_TIMEOUT:-60}"
 stream_batch_size="${PTN_PHPT_STREAM_BATCH_SIZE:-100}"
 stall_timeout="${PTN_PHPT_STALL_TIMEOUT:-45}"
 single_wall_timeout="${PTN_PHPT_SINGLE_WALL_TIMEOUT:-20}"
+quarantine_extension_on_crash="${PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH:-1}"
 php_src="${PHP_SRC_PHPT:-/home/claude/php-src-phpt}"
 phpc_bin="${PHPC_BIN:-$repo_root/target/release/phpc}"
 
@@ -52,6 +53,7 @@ while IFS=$'\t' read -r shard remaining manifest_rel; do
       PTN_PHPT_STREAM_BATCH_SIZE="$stream_batch_size" \
       PTN_PHPT_STALL_TIMEOUT="$stall_timeout" \
       PTN_PHPT_SINGLE_WALL_TIMEOUT="$single_wall_timeout" \
+      PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH="$quarantine_extension_on_crash" \
       tools/start-local-full-phpt-run.sh >> "$launch_log" 2>&1
   fi
 
@@ -67,6 +69,7 @@ while IFS=$'\t' read -r shard remaining manifest_rel; do
     PTN_PHPT_STREAM_BATCH_SIZE="$stream_batch_size" \
     PTN_PHPT_STALL_TIMEOUT="$stall_timeout" \
     PTN_PHPT_SINGLE_WALL_TIMEOUT="$single_wall_timeout" \
+    PTN_PHPT_QUARANTINE_EXTENSION_ON_CRASH="$quarantine_extension_on_crash" \
     tools/start-local-full-phpt-watchdog.sh >> "$launch_log" 2>&1
 
   printf 'shard=%s tests=%s primary=%s watchdog=%s\n' \

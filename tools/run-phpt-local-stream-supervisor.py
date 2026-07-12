@@ -68,6 +68,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="run and checkpoint only the first unreported row, then exit",
     )
+    parser.add_argument(
+        "--quarantine-extension-on-crash",
+        action="store_true",
+        help="skip the remaining rows in a crashing extension's own test suite",
+    )
     return parser.parse_args()
 
 
@@ -196,6 +201,99 @@ def crashed_result(row: Row, elapsed_ms: int, exit_code: int | str) -> Result:
         timed_out=0,
         crashed=1,
     )
+
+
+def quarantined_skip_result(row: Row) -> Result:
+    return Result(
+        index=row.index,
+        rows=1,
+        first_row=row.rel,
+        last_row=row.rel,
+        state="skipped",
+        exit_code=0,
+        elapsed_ms=0,
+        tests=1,
+        passed=0,
+        failed=0,
+        skipped=1,
+        warned=0,
+        timed_out=0,
+        crashed=0,
+    )
+
+
+def declared_extensions(row: Row) -> set[str]:
+    try:
+        lines = row.path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return set()
+    active = False
+    extensions: set[str] = set()
+    for line in lines:
+        marker = line.strip()
+        if marker == "--EXTENSIONS--":
+            active = True
+            continue
+        if active and marker.startswith("--") and marker.endswith("--"):
+            break
+        if active:
+            extensions.update(marker.split())
+    return extensions
+
+
+def extension_suite_name(row: Row) -> str | None:
+    parts = row.rel.split("/")
+    if len(parts) < 4 or parts[0] != "ext" or parts[2] != "tests":
+        return None
+    extension = parts[1]
+    return extension if extension in declared_extensions(row) else None
+
+
+def quarantine_extension_rows(
+    *,
+    trigger: Row,
+    rows: list[Row],
+    results: dict[str, Result],
+    status_path: Path,
+    results_path: Path,
+    log_path: Path,
+    started_at: str,
+    run_dir: Path,
+) -> int:
+    extension = extension_suite_name(trigger)
+    if extension is None:
+        return 0
+    prefix = f"ext/{extension}/tests/"
+    quarantined = [row for row in rows if row.rel.startswith(prefix) and row.rel not in results]
+    if not quarantined:
+        return 0
+    for row in quarantined:
+        results[row.rel] = quarantined_skip_result(row)
+    write_results(results_path, results)
+    ledger_path = run_dir / "quarantined-extensions.tsv"
+    ledger_lines = ["timestamp_utc\textension\ttrigger\tquarantined"]
+    if ledger_path.is_file():
+        ledger_lines = ledger_path.read_text(encoding="utf-8").splitlines()
+    ledger_lines.append(f"{timestamp()}\t{extension}\t{trigger.rel}\t{len(quarantined)}")
+    atomic_write(ledger_path, "\n".join(ledger_lines) + "\n")
+    with log_path.open("a", encoding="utf-8", errors="replace") as log:
+        log.write(
+            f"\n===== quarantined extension {extension} rows={len(quarantined)} "
+            f"after crash {trigger.rel} {timestamp()} =====\n"
+        )
+    write_status(
+        status_path,
+        state="running",
+        total=len(rows),
+        results=results,
+        mode="quarantine",
+        current=trigger.rel,
+        last_row=trigger.rel,
+        last_state="crashed",
+        started_at=started_at,
+        run_dir=run_dir,
+    )
+    return len(quarantined)
 
 
 def write_results(path: Path, results: dict[str, Result]) -> None:
@@ -564,6 +662,20 @@ def main() -> int:
             started_at=started_at,
             run_dir=args.out_dir.resolve(),
         )
+        if (
+            args.quarantine_extension_on_crash
+            and results[remaining[0].rel].state == "crashed"
+        ):
+            quarantine_extension_rows(
+                trigger=remaining[0],
+                rows=rows,
+                results=results,
+                status_path=status_path,
+                results_path=results_path,
+                log_path=log_path,
+                started_at=started_at,
+                run_dir=args.out_dir.resolve(),
+            )
         return 0
 
     while len(results) < len(rows):
@@ -598,8 +710,9 @@ def main() -> int:
         )
         unreported_chunk_rows = [row for row in chunk if row.rel not in results]
         if unreported_chunk_rows:
+            fallback_row = unreported_chunk_rows[0]
             run_single_fallback(
-                row=unreported_chunk_rows[0],
+                row=fallback_row,
                 rows_by_rel=rows_by_rel,
                 results=results,
                 php_src=php_src,
@@ -612,6 +725,20 @@ def main() -> int:
                 started_at=started_at,
                 run_dir=args.out_dir.resolve(),
             )
+            if (
+                args.quarantine_extension_on_crash
+                and results[fallback_row.rel].state == "crashed"
+            ):
+                quarantine_extension_rows(
+                    trigger=fallback_row,
+                    rows=rows,
+                    results=results,
+                    status_path=status_path,
+                    results_path=results_path,
+                    log_path=log_path,
+                    started_at=started_at,
+                    run_dir=args.out_dir.resolve(),
+                )
 
     write_status(
         status_path,
