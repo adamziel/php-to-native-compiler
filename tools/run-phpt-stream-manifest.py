@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 STATUS_RE = re.compile(r"^(PASS|FAIL|SKIP|WARN|BORK|XFAIL|LEAK)\b.*\[(.+?\.phpt)\]\s*$")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,6 +134,10 @@ def normalize_reported_path(raw: str, php_src: Path) -> str:
         except ValueError:
             return path.as_posix()
     return value.removeprefix("./")
+
+
+def clean_run_tests_line(line: str) -> str:
+    return ANSI_RE.sub("", line).strip()
 
 
 def result_for_status(row: Row, status: str, elapsed_ms: int) -> Result:
@@ -315,7 +320,7 @@ def main() -> int:
         assert process.stdout is not None
         for line in process.stdout:
             log.write(line)
-            match = STATUS_RE.match(line)
+            match = STATUS_RE.match(clean_run_tests_line(line))
             if match is not None:
                 status = match.group(1)
                 rel = normalize_reported_path(match.group(2), php_src)
