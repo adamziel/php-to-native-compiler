@@ -28,7 +28,7 @@ while true; do
   warned="$(value warned "$baseline")"
   crashed="$(value crashed "$baseline")"
 
-  clear
+  clear 2>/dev/null || true
   printf 'PHPT local full run (sharded)\n'
   printf 'run_dir: %s\n' "$run_dir"
   printf '\n'

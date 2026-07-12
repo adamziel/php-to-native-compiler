@@ -3,6 +3,11 @@ set -euo pipefail
 
 run_dir="${1:-.runtime/local-full-phpt-current}"
 interval="${2:-5}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -f "$run_dir/shards/plan.tsv" ]]; then
+  exec "$script_dir/phpt-local-sharded-progress.sh" "$run_dir" "$interval"
+fi
 
 read_status() {
   local status="$run_dir/status.tsv"
@@ -34,7 +39,7 @@ read_status() {
 }
 
 while true; do
-  clear
+  clear 2>/dev/null || true
   read_status
   sleep "$interval"
 done
